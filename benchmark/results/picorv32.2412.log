@@ -1,0 +1,58 @@
+OpenSTA 2.6.0 3cf999c344 Copyright (c) 2024, Parallax Software, Inc.
+License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>
+
+This is free software, and you are free to change and redistribute it
+under certain conditions; type `show_copying' for details. 
+This program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.
+DESIGN: picorv32
+NETLIST_SYN_V: picorv32.netlist.syn.v
+Startpoint: _21006_ (rising edge-triggered flip-flop clocked by core_clock)
+Endpoint: _22039_ (rising edge-triggered flip-flop clocked by core_clock)
+Path Group: core_clock
+Path Type: max
+
+  Delay    Time   Description
+---------------------------------------------------------
+   0.00    0.00   clock core_clock (rise edge)
+   0.00    0.00   clock network delay (ideal)
+   0.00    0.00 ^ _21006_/CK (DFF_X1)
+   0.08    0.08 ^ _21006_/Q (DFF_X1)
+   2.39    2.47 ^ _23017_/Z (BUF_X1)
+   0.08    2.56 v _17718_/ZN (AOI211_X4)
+   0.11    2.66 ^ _17720_/ZN (AOI211_X4)
+   0.01    2.67 v _17721_/ZN (NOR3_X1)
+   0.11    2.78 ^ _17729_/ZN (AOI211_X4)
+   0.01    2.79 v _19033_/ZN (NOR3_X1)
+   0.03    2.82 ^ _19035_/ZN (OAI21_X1)
+   0.01    2.83 v _19037_/ZN (NAND2_X1)
+   0.05    2.88 v _19039_/Z (MUX2_X1)
+   0.03    2.91 v _25458_/Z (BUF_X1)
+   0.00    2.91 v _22039_/D (DFF_X1)
+           2.91   data arrival time
+
+   2.00    2.00   clock core_clock (rise edge)
+   0.00    2.00   clock network delay (ideal)
+   0.00    2.00   clock reconvergence pessimism
+           2.00 ^ _22039_/CK (DFF_X1)
+  -0.04    1.96   library setup time
+           1.96   data required time
+---------------------------------------------------------
+           1.96   data required time
+          -2.91   data arrival time
+---------------------------------------------------------
+          -0.95   slack (VIOLATED)
+
+
+Group                  Internal  Switching    Leakage      Total
+                          Power      Power      Power      Power (Watts)
+----------------------------------------------------------------
+Sequential             6.34e-03   8.90e-05   1.22e-04   6.56e-03  39.5%
+Combinational          5.56e-03   4.15e-03   3.34e-04   1.00e-02  60.5%
+Clock                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Macro                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Pad                    0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+----------------------------------------------------------------
+Total                  1.19e-02   4.24e-03   4.56e-04   1.66e-02 100.0%
+                          71.7%      25.6%       2.7%
+core_clock period_min = 2.95 fmax = 339.19
+   Chip area for module '\picorv32': 21707.462000

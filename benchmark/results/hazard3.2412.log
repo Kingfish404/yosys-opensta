@@ -1,0 +1,133 @@
+OpenSTA 2.6.0 3cf999c344 Copyright (c) 2024, Parallax Software, Inc.
+License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>
+
+This is free software, and you are free to change and redistribute it
+under certain conditions; type `show_copying' for details. 
+This program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.
+DESIGN: hazard3_core
+NETLIST_SYN_V: hazard3_core.netlist.syn.v
+Startpoint: frontend/_2418_
+            (rising edge-triggered flip-flop clocked by core_clock)
+Endpoint: regs/_11164_ (rising edge-triggered flip-flop clocked by core_clock)
+Path Group: core_clock
+Path Type: max
+
+  Delay    Time   Description
+---------------------------------------------------------
+   0.00    0.00   clock core_clock (rise edge)
+   0.00    0.00   clock network delay (ideal)
+   0.00    0.00 ^ frontend/_2418_/CK (DFFR_X1)
+   0.10    0.10 ^ frontend/_2418_/Q (DFFR_X1)
+   0.20    0.30 ^ decode_u/decomp/_0951_/Z (BUF_X1)
+   0.02    0.32 v decode_u/decomp/_0501_/ZN (NOR2_X4)
+   0.04    0.36 v decode_u/decomp/_0537_/ZN (AND2_X1)
+   0.03    0.39 ^ decode_u/decomp/_0538_/ZN (INV_X1)
+   0.01    0.40 v decode_u/decomp/_0541_/ZN (NOR2_X4)
+   0.02    0.43 ^ decode_u/decomp/_0546_/ZN (NOR2_X1)
+   0.04    0.47 ^ decode_u/decomp/_0555_/ZN (AND2_X2)
+   0.04    0.50 ^ decode_u/decomp/_0635_/ZN (AND2_X1)
+   0.04    0.54 ^ decode_u/decomp/_0639_/ZN (AND2_X1)
+   0.01    0.55 v decode_u/decomp/_0640_/ZN (INV_X2)
+   0.04    0.60 ^ decode_u/decomp/_0650_/ZN (NOR4_X2)
+   0.03    0.63 v decode_u/decomp/_0654_/ZN (NAND4_X1)
+   0.03    0.66 v decode_u/decomp/_0969_/Z (BUF_X1)
+   0.03    0.69 v decode_u/_1913_/Z (BUF_X1)
+   0.04    0.73 v decode_u/_1043_/ZN (AND3_X1)
+   0.04    0.77 v decode_u/_1044_/ZN (AND2_X2)
+   0.03    0.80 v decode_u/_1115_/ZN (AND2_X1)
+   0.03    0.83 v decode_u/_1116_/Z (BUF_X4)
+   0.03    0.86 v decode_u/_1123_/ZN (AND2_X2)
+   0.04    0.90 ^ decode_u/_1163_/ZN (AOI22_X1)
+   0.01    0.91 v decode_u/_1164_/ZN (NAND2_X1)
+   0.10    1.01 v decode_u/_1169_/ZN (OR4_X1)
+   0.10    1.11 v decode_u/_1222_/ZN (OR4_X2)
+   0.05    1.16 ^ decode_u/_1289_/ZN (NOR2_X1)
+   0.03    1.19 v decode_u/_1322_/ZN (NAND3_X2)
+   0.04    1.23 v decode_u/_1351_/ZN (AND2_X1)
+   0.02    1.25 ^ decode_u/_1619_/ZN (NAND4_X1)
+   0.02    1.27 ^ decode_u/_2161_/Z (BUF_X1)
+   0.19    1.46 ^ _4783_/Z (BUF_X1)
+   0.02    1.49 v _2760_/ZN (INV_X1)
+   0.08    1.57 v _2761_/ZN (OR3_X4)
+   0.01    1.58 ^ _2764_/ZN (NAND2_X4)
+   0.04    1.62 ^ _2765_/ZN (XNOR2_X2)
+   0.07    1.69 ^ _2768_/Z (XOR2_X1)
+   0.02    1.71 v _2769_/ZN (NOR2_X2)
+   0.03    1.74 ^ _2776_/ZN (NOR2_X4)
+   0.01    1.75 v _2777_/ZN (INV_X2)
+   0.03    1.78 v _2799_/ZN (AND3_X2)
+   0.03    1.81 ^ _2800_/ZN (INV_X1)
+   0.02    1.82 v _2801_/ZN (NOR2_X4)
+   0.04    1.86 ^ _2837_/ZN (NOR2_X4)
+   0.03    1.89 ^ _2838_/Z (BUF_X8)
+   0.01    1.89 v _2839_/ZN (INV_X1)
+   0.02    1.92 v _4795_/Z (BUF_X1)
+   0.02    1.94 v decode_u/_1940_/Z (BUF_X1)
+   0.05    1.99 ^ decode_u/_1085_/ZN (NOR3_X1)
+   0.02    2.01 v decode_u/_1086_/ZN (INV_X1)
+   0.04    2.05 ^ decode_u/_1529_/ZN (NOR3_X1)
+   0.03    2.07 ^ decode_u/_2006_/Z (BUF_X1)
+   0.10    2.17 ^ frontend/_2591_/Z (BUF_X1)
+   0.07    2.24 ^ frontend/_1469_/ZN (XNOR2_X1)
+   0.04    2.28 ^ frontend/_1470_/ZN (AND2_X4)
+   0.03    2.30 ^ frontend/_1471_/Z (BUF_X8)
+   0.01    2.31 v frontend/_1472_/ZN (INV_X8)
+   0.07    2.38 v frontend/_1473_/ZN (OR3_X4)
+   0.03    2.41 v frontend/_1481_/ZN (AND2_X4)
+   0.03    2.44 v frontend/_1640_/Z (BUF_X8)
+   0.03    2.47 ^ frontend/_1645_/ZN (NAND4_X1)
+   0.04    2.50 ^ frontend/_1646_/ZN (AND2_X1)
+   0.03    2.53 ^ frontend/_1649_/ZN (AND2_X2)
+   0.01    2.55 v frontend/_1650_/ZN (AOI21_X1)
+   0.01    2.56 ^ frontend/_1651_/ZN (INV_X1)
+   0.02    2.58 ^ frontend/_2706_/Z (BUF_X1)
+   0.02    2.60 ^ _5590_/Z (BUF_X1)
+   0.03    2.63 ^ _4006_/Z (MUX2_X1)
+   0.02    2.65 ^ _5591_/Z (BUF_X1)
+   2.69    5.34 ^ regs/_12909_/Z (BUF_X1)
+   0.13    5.47 ^ regs/_09155_/ZN (AND2_X1)
+   0.05    5.52 v regs/_09157_/ZN (AOI211_X4)
+   0.08    5.60 v regs/_09158_/ZN (OR3_X1)
+   0.01    5.61 ^ regs/_09168_/ZN (NAND2_X1)
+   0.04    5.65 ^ regs/_09169_/Z (MUX2_X1)
+   0.02    5.67 ^ regs/_12934_/Z (BUF_X1)
+   0.00    5.67 ^ regs/_11164_/D (DFF_X1)
+           5.67   data arrival time
+
+   2.00    2.00   clock core_clock (rise edge)
+   0.00    2.00   clock network delay (ideal)
+   0.00    2.00   clock reconvergence pessimism
+           2.00 ^ regs/_11164_/CK (DFF_X1)
+  -0.03    1.97   library setup time
+           1.97   data required time
+---------------------------------------------------------
+           1.97   data required time
+          -5.67   data arrival time
+---------------------------------------------------------
+          -3.70   slack (VIOLATED)
+
+
+Group                  Internal  Switching    Leakage      Total
+                          Power      Power      Power      Power (Watts)
+----------------------------------------------------------------
+Sequential             7.37e-03   1.73e-04   1.26e-04   7.67e-03   8.1%
+Combinational          5.99e-02   2.65e-02   5.65e-04   8.70e-02  91.9%
+Clock                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Macro                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Pad                    0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+----------------------------------------------------------------
+Total                  6.73e-02   2.67e-02   6.91e-04   9.46e-02 100.0%
+                          71.1%      28.2%       0.7%
+core_clock period_min = 5.70 fmax = 175.42
+   Chip area for module '$paramod$36f25f238f636de803d1a2fea727b675b62e4b8f\hazard3_alu': 1282.120000
+   Chip area for module '$paramod$36f25f238f636de803d1a2fea727b675b62e4b8f\hazard3_branchcmp': 447.678000
+   Chip area for module '$paramod$36f25f238f636de803d1a2fea727b675b62e4b8f\hazard3_decode': 1449.168000
+   Chip area for module '$paramod$36f25f238f636de803d1a2fea727b675b62e4b8f\hazard3_frontend': 2611.322000
+   Chip area for module '$paramod$36f25f238f636de803d1a2fea727b675b62e4b8f\hazard3_instr_decompress': 729.904000
+   Chip area for module '$paramod$36f25f238f636de803d1a2fea727b675b62e4b8f\hazard3_muldiv_seq': 2557.058000
+   Chip area for module '$paramod$36f25f238f636de803d1a2fea727b675b62e4b8f\hazard3_shift_barrel': 647.178000
+   Chip area for module '$paramod$a4ae80ef91edab06355001de9d60c4057680c0f7\hazard3_regfile_1w2r': 13432.734000
+   Chip area for module '$paramod$b8eb2c5a64e78e246e8be1b25fdbc754ff26b6d4\hazard3_csr': 2071.874000
+   Chip area for module '\hazard3_core': 3970.050000
+   Chip area for module '\hazard3_power_ctrl': 133.000000
+   Chip area for top module '\hazard3_core': 29332.086000

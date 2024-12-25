@@ -1,0 +1,83 @@
+OpenSTA 2.6.0 3cf999c344 Copyright (c) 2024, Parallax Software, Inc.
+License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>
+
+This is free software, and you are free to change and redistribute it
+under certain conditions; type `show_copying' for details. 
+This program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.
+DESIGN: serv_top
+NETLIST_SYN_V: serv_top.netlist.syn.v
+Startpoint: decode/_205_ (rising edge-triggered flip-flop clocked by core_clock)
+Endpoint: ctrl/_352_ (rising edge-triggered flip-flop clocked by core_clock)
+Path Group: core_clock
+Path Type: max
+
+  Delay    Time   Description
+---------------------------------------------------------
+   0.00    0.00   clock core_clock (rise edge)
+   0.00    0.00   clock network delay (ideal)
+   0.00    0.00 ^ decode/_205_/CK (DFF_X1)
+   0.08    0.08 ^ decode/_205_/Q (DFF_X1)
+   0.11    0.19 ^ decode/_238_/Z (BUF_X1)
+   0.00    0.19 v decode/_132_/ZN (INV_X16)
+   0.04    0.23 v decode/_147_/ZN (AND4_X1)
+   0.07    0.30 v decode/_148_/ZN (OR3_X1)
+   0.03    0.33 v decode/_254_/Z (BUF_X1)
+   0.03    0.36 v state/_247_/Z (BUF_X1)
+   0.03    0.39 v state/_146_/ZN (AND2_X4)
+   0.03    0.42 v state/_148_/ZN (AND2_X4)
+   0.03    0.45 ^ state/_182_/ZN (AOI21_X2)
+   0.01    0.46 v state/_183_/ZN (OAI21_X1)
+   0.02    0.49 v state/_281_/Z (BUF_X1)
+   0.09    0.58 v bufreg/_297_/Z (BUF_X1)
+   0.05    0.64 v bufreg/_175_/ZN (AND2_X1)
+   0.03    0.66 v bufreg/_301_/Z (BUF_X1)
+   0.03    0.69 v ctrl/_359_/Z (BUF_X1)
+   0.01    0.70 ^ ctrl/_223_/ZN (NAND2_X1)
+   0.02    0.72 v ctrl/_225_/ZN (NAND2_X1)
+   0.02    0.74 ^ ctrl/_227_/ZN (NAND2_X2)
+   0.04    0.78 ^ ctrl/_229_/ZN (AND3_X4)
+   0.01    0.79 v ctrl/_230_/ZN (INV_X2)
+   0.05    0.84 v ctrl/_317_/Z (MUX2_X2)
+   0.05    0.89 v ctrl/_319_/Z (MUX2_X2)
+   0.02    0.91 ^ ctrl/_320_/ZN (OAI22_X1)
+   0.03    0.94 ^ ctrl/_440_/Z (BUF_X1)
+   0.00    0.94 ^ ctrl/_352_/D (DFF_X1)
+           0.94   data arrival time
+
+   2.00    2.00   clock core_clock (rise edge)
+   0.00    2.00   clock network delay (ideal)
+   0.00    2.00   clock reconvergence pessimism
+           2.00 ^ ctrl/_352_/CK (DFF_X1)
+  -0.03    1.97   library setup time
+           1.97   data required time
+---------------------------------------------------------
+           1.97   data required time
+          -0.94   data arrival time
+---------------------------------------------------------
+           1.03   slack (MET)
+
+
+Group                  Internal  Switching    Leakage      Total
+                          Power      Power      Power      Power (Watts)
+----------------------------------------------------------------
+Sequential             7.24e-04   3.74e-05   1.28e-05   7.74e-04  44.2%
+Combinational          6.42e-04   2.92e-04   4.35e-05   9.77e-04  55.8%
+Clock                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Macro                  0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+Pad                    0.00e+00   0.00e+00   0.00e+00   0.00e+00   0.0%
+----------------------------------------------------------------
+Total                  1.37e-03   3.29e-04   5.63e-05   1.75e-03 100.0%
+                          78.0%      18.8%       3.2%
+core_clock period_min = 0.97 fmax = 1029.75
+   Chip area for module '$paramod$3e7b4dd89124d05b1503dd2b902960520f2771f4\serv_csr': 188.328000
+   Chip area for module '$paramod$9612b4840d8ba9073515f47ec1c47f8b049edc33\serv_ctrl': 332.766000
+   Chip area for module '$paramod$e1f948ce0562a6173fd622abd894e278bdd3effe\serv_rf_if': 119.966000
+   Chip area for module '$paramod$f3cec78d1cfbbfc8778027792a43ce84e0717e5d\serv_state': 219.716000
+   Chip area for module '$paramod\serv_alu\W=s32'00000000000000000000000000000001': 59.318000
+   Chip area for module '$paramod\serv_bufreg\MDU=1'0': 326.382000
+   Chip area for module '$paramod\serv_decode\PRE_REGISTER=s32'00000000000000000000000000000001\MDU=1'0': 237.804000
+   Chip area for module '$paramod\serv_mem_if\WITH_CSR=1'1\W=s32'00000000000000000000000000000001': 54.264000
+   Chip area for module '\serv_bufreg2': 417.354000
+   Chip area for module '\serv_immdec': 332.500000
+   Chip area for module '\serv_top': 32.984000
+   Chip area for top module '\serv_top': 2321.382000

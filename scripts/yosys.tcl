@@ -3,9 +3,13 @@
 #===========================================================
 set DESIGN                  [lindex $argv 0]
 set VERILOG_FILES           [string map {"\"" ""} [lindex $argv 1]]
-set NETLIST_SYN_V           [lindex $argv 2]
-set VERILOG_INCLUDE_DIRS    ""
+set VERILOG_INCLUDE_DIRS    [string map {"\"" ""} [lindex $argv 2]]
+set NETLIST_SYN_V           [lindex $argv 3]
 set RESULT_DIR              [file dirname $NETLIST_SYN_V]
+puts "DESIGN: $DESIGN"
+puts "VERILOG_FILES: $VERILOG_FILES"
+puts "VERILOG_INCLUDE_DIRS: $VERILOG_INCLUDE_DIRS"
+puts "NETLIST_SYN_V: $NETLIST_SYN_V"
 
 set FOUNDARY_PATH           "[file dirname [info script]]/../nangate45"
 set MERGED_LIB_FILE         "$FOUNDARY_PATH/lib/merged.lib"

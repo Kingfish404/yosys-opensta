@@ -11,6 +11,11 @@ link_design $DESIGN
 
 # === sdc start ===
 set clk_port_name clock
+if {[info exists env(CLK_PORT_NAME)]} {
+  set clk_port_name $::env(CLK_PORT_NAME)
+} else {
+  puts "Warning: Environment CLK_PORT_NAME is not defined. Use $clk_port_name by default."
+}
 set CLK_FREQ_MHZ 500
 if {[info exists env(CLK_FREQ_MHZ)]} {
   set CLK_FREQ_MHZ $::env(CLK_FREQ_MHZ)
@@ -26,8 +31,6 @@ create_clock -name core_clock -period [expr 1000.0 / $CLK_FREQ_MHZ] $clk_port
 report_checks
 report_power
 report_clock_min_period
-
-puts "$DESIGN-$CLK_FREQ_MHZ MHz STA done."
 
 write_sdc $PROJ_PATH/$RESULT_DIR/$NETLIST_SYN_V.sdc
 write_sdf $PROJ_PATH/$RESULT_DIR/$NETLIST_SYN_V.sdf

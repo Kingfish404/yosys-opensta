@@ -4,7 +4,9 @@ NANGATE45_URL="https://github.com/Kingfish404/yosys-opensta/releases/download/na
 
 DESIGN ?= gcd
 RTL_FILES ?= $(shell find $(PROJ_PATH)/example -name "*.v")
+CLK_PORT_NAME ?= clock
 CLK_FREQ_MHZ ?= 500
+VERILOG_INCLUDE_DIRS ?= $(PROJ_PATH)/example
 
 RESULT_DIR = $(PROJ_PATH)/result/$(DESIGN)-$(CLK_FREQ_MHZ)MHz
 SCRIPT_DIR = $(PROJ_PATH)/scripts
@@ -21,17 +23,24 @@ syn: $(RESULT_DIR)/$(NETLIST_SYN_V)
 
 $(RESULT_DIR)/$(NETLIST_SYN_V): $(RTL_FILES) $(SCRIPT_DIR)/yosys.tcl
 	mkdir -p $(@D)
-	echo tcl $(SCRIPT_DIR)/yosys.tcl $(DESIGN) \"$(RTL_FILES)\" $@ | yosys -l $(@D)/yosys.log -s -
+	echo tcl $(SCRIPT_DIR)/yosys.tcl \
+		$(DESIGN) \
+		\"$(RTL_FILES)\" \
+		\"$(VERILOG_INCLUDE_DIRS)\" \
+		$@ | yosys -l $(@D)/yosys.log -s -
 
 sta: $(RESULT_DIR)/$(NETLIST_SYN_V)
-	docker run -i  \
-		-e DESIGN=$(DESIGN) -e CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
+	@docker run -i \
+		-e DESIGN=$(DESIGN) \
+		-e CLK_PORT_NAME=$(CLK_PORT_NAME) \
+		-e CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
 		-e RESULT_DIR=result/$(DESIGN)-$(CLK_FREQ_MHZ)MHz/ \
 		-e NETLIST_SYN_V=$(NETLIST_SYN_V) \
-		-v .:/data opensta data/scripts/opensta.tcl
+		-v .:/data opensta data/scripts/opensta.tcl > $(RESULT_DIR)/sta.log
 
 show: $(RESULT_DIR)/$(NETLIST_SYN_V)
-	cat $(RESULT_DIR)/synth_stat.txt | grep 'Chip area'
+	@cat $(RESULT_DIR)/sta.log
+	@cat $(RESULT_DIR)/synth_stat.txt | grep 'Chip area'
 
 clean:
 	-rm -rf result/
