@@ -38,6 +38,15 @@ sta: $(RESULT_DIR)/$(NETLIST_SYN_V)
 		-e NETLIST_SYN_V=$(NETLIST_SYN_V) \
 		-v .:/data opensta data/scripts/opensta.tcl > $(RESULT_DIR)/sta.log
 
+sta_local: $(RESULT_DIR)/$(NETLIST_SYN_V)
+	PROJ_PATH=$(shell pwd) \
+	DESIGN=$(DESIGN) \
+	CLK_PORT_NAME=$(CLK_PORT_NAME) \
+	CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
+	RESULT_DIR=result/$(DESIGN)-$(CLK_FREQ_MHZ)MHz/ \
+	NETLIST_SYN_V=$(NETLIST_SYN_V) \
+	./OpenSTA/app/sta ./scripts/opensta.tcl > $(RESULT_DIR)/sta.log
+
 show: $(RESULT_DIR)/$(NETLIST_SYN_V)
 	@cat $(RESULT_DIR)/sta.log
 	@cat $(RESULT_DIR)/synth_stat.txt | grep 'Chip area'
