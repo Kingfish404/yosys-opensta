@@ -1,4 +1,9 @@
 set PROJ_PATH /data
+if {[info exists env(PROJ_PATH)]} {
+  set PROJ_PATH $::env(PROJ_PATH)
+} else {
+  puts "Warning: Environment PROJ_PATH is not defined. Use $PROJ_PATH by default."
+}
 set DESIGN $::env(DESIGN)
 set RESULT_DIR $::env(RESULT_DIR)
 set NETLIST_SYN_V $::env(NETLIST_SYN_V)

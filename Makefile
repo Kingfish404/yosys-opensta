@@ -30,13 +30,22 @@ $(RESULT_DIR)/$(NETLIST_SYN_V): $(RTL_FILES) $(SCRIPT_DIR)/yosys.tcl
 		$@ | yosys -l $(@D)/yosys.log -s -
 
 sta: $(RESULT_DIR)/$(NETLIST_SYN_V)
-	@docker run -i \
+	@docker run -i --rm \
 		-e DESIGN=$(DESIGN) \
 		-e CLK_PORT_NAME=$(CLK_PORT_NAME) \
 		-e CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
 		-e RESULT_DIR=result/$(DESIGN)-$(CLK_FREQ_MHZ)MHz/ \
 		-e NETLIST_SYN_V=$(NETLIST_SYN_V) \
 		-v .:/data opensta data/scripts/opensta.tcl > $(RESULT_DIR)/sta.log
+
+sta_local: $(RESULT_DIR)/$(NETLIST_SYN_V)
+	PROJ_PATH=$(shell pwd) \
+	DESIGN=$(DESIGN) \
+	CLK_PORT_NAME=$(CLK_PORT_NAME) \
+	CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
+	RESULT_DIR=result/$(DESIGN)-$(CLK_FREQ_MHZ)MHz/ \
+	NETLIST_SYN_V=$(NETLIST_SYN_V) \
+	./OpenSTA/build/sta ./scripts/opensta.tcl > $(RESULT_DIR)/sta.log
 
 show: $(RESULT_DIR)/$(NETLIST_SYN_V)
 	@cat $(RESULT_DIR)/sta.log
