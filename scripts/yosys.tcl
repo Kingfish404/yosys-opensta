@@ -121,6 +121,7 @@ opt_clean -purge
 
 # reports
 tee -o $RESULT_DIR/synth_check.txt check
+tee -o $RESULT_DIR/input.json stat -liberty $MERGED_LIB_FILE -json
 tee -o $RESULT_DIR/synth_stat.txt stat -liberty $MERGED_LIB_FILE
 
 # write synthesized design

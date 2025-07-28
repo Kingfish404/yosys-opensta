@@ -2,3 +2,6 @@ OpenSTA/
 nangate45/
 result
 *.log
+
+cudd-*
+*.tar.bz2
