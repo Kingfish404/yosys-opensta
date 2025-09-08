@@ -53,13 +53,13 @@ if {[info exist VERILOG_INCLUDE_DIRS]} {
 
 # read verilog files
 foreach file $VERILOG_FILES {
-    read_verilog -sv {*}$vIdirsArgs $file
+    read_slang {*}$vIdirsArgs --top $DESIGN $file
 }
 
 
 # Read blackbox stubs of standard/io/ip/memory cells. This allows for standard/io/ip/memory cell (or
 # structural netlist support in the input verilog
-read_verilog $BLACKBOX_V_FILE
+read_slang $BLACKBOX_V_FILE
 
 # Apply toplevel parameters (if exist
 if {[info exist VERILOG_TOP_PARAMS]} {
@@ -71,7 +71,7 @@ if {[info exist VERILOG_TOP_PARAMS]} {
 
 # Read platform specific mapfile for OPENROAD_CLKGATE cells
 if {[info exist CLKGATE_MAP_FILE]} {
-    read_verilog $CLKGATE_MAP_FILE
+    read_slang $CLKGATE_MAP_FILE
 }
 
 # Use hierarchy to automatically generate blackboxes for known memory macro.

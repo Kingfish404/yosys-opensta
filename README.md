@@ -16,6 +16,12 @@ brew install yosys docker
 # https://github.com/YosysHQ/oss-cad-suite-build
 
 make init
+
+# install yosys-slang
+git clone --recursive https://github.com/povik/yosys-slang
+cd yosys-slang
+make -j$(nproc)
+make install
 ```
 
 ## Usage Example

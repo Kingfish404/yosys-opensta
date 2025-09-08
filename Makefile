@@ -27,7 +27,7 @@ $(RESULT_DIR)/$(NETLIST_SYN_V): $(RTL_FILES) $(SCRIPT_DIR)/yosys.tcl
 		$(DESIGN) \
 		\"$(RTL_FILES)\" \
 		\"$(VERILOG_INCLUDE_DIRS)\" \
-		$@ | yosys -l $(@D)/yosys.log -s -
+		$@ | yosys -m slang -l $(@D)/yosys.log -s - | tee $(@D)/yosys.log
 
 sta: $(RESULT_DIR)/$(NETLIST_SYN_V)
 	@docker run -i --rm \
@@ -36,7 +36,7 @@ sta: $(RESULT_DIR)/$(NETLIST_SYN_V)
 		-e CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
 		-e RESULT_DIR=result/$(DESIGN)-$(CLK_FREQ_MHZ)MHz/ \
 		-e NETLIST_SYN_V=$(NETLIST_SYN_V) \
-		-v .:/data opensta data/scripts/opensta.tcl > $(RESULT_DIR)/sta.log
+		-v .:/data opensta data/scripts/opensta.tcl | tee $(RESULT_DIR)/sta.log
 
 sta_local: $(RESULT_DIR)/$(NETLIST_SYN_V)
 	PROJ_PATH=$(shell pwd) \
@@ -45,7 +45,7 @@ sta_local: $(RESULT_DIR)/$(NETLIST_SYN_V)
 	CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
 	RESULT_DIR=result/$(DESIGN)-$(CLK_FREQ_MHZ)MHz/ \
 	NETLIST_SYN_V=$(NETLIST_SYN_V) \
-	./OpenSTA/build/sta ./scripts/opensta.tcl > $(RESULT_DIR)/sta.log
+	./OpenSTA/build/sta ./scripts/opensta.tcl | tee $(RESULT_DIR)/sta.log
 
 show: $(RESULT_DIR)/$(NETLIST_SYN_V)
 	@cat $(RESULT_DIR)/sta.log
