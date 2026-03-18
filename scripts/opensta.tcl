@@ -21,7 +21,7 @@ if {[info exists env(CLK_PORT_NAME)]} {
 } else {
   puts "Warning: Environment CLK_PORT_NAME is not defined. Use $clk_port_name by default."
 }
-set CLK_FREQ_MHZ 500
+set CLK_FREQ_MHZ 50
 if {[info exists env(CLK_FREQ_MHZ)]} {
   set CLK_FREQ_MHZ $::env(CLK_FREQ_MHZ)
 } else {

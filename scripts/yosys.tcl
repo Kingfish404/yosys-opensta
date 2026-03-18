@@ -80,6 +80,11 @@ if {[info exist BLACKBOX_MAP_TCL]} {
     source $BLACKBOX_MAP_TCL
 }
 
+# generate architecture diagram data (preserves module hierarchy)
+# write_json BEFORE hierarchy/proc — read_slang already parsed all modules
+# hierarchy and proc would flatten sub-modules into primitives
+write_json $RESULT_DIR/${DESIGN}_hier.json
+
 # generic synthesis
 synth  -top $DESIGN
 
@@ -126,3 +131,6 @@ tee -o $RESULT_DIR/synth_stat.txt stat -liberty $MERGED_LIB_FILE
 
 # write synthesized design
 write_verilog -noattr -noexpr -nohex -nodec $NETLIST_SYN_V
+
+# write source-annotated netlist (preserves src attributes for timing-to-RTL mapping)
+write_verilog -noexpr -nohex -nodec $RESULT_DIR/${DESIGN}.netlist.src.v

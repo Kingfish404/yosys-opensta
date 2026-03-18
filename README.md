@@ -4,31 +4,39 @@ Use open-source EDA tools for ASIC synthesis ([YosysHQ/yosys](https://github.com
 
 Inspired by [OSCPU/yosys-sta](https://github.com/OSCPU/yosys-sta).
 
-## Denpendency and Environment
+## Dependency and Environment
 
-Firstly, install [YosysHQ](https://github.com/YosysHQ/yosys), and the [Docker](https://www.docker.com/) for [parallaxsw/OpenSTA](https://github.com/parallaxsw/OpenSTA). Then `make init` to get `nangate45` and `OpenSTA` docker images.
+Install [YosysHQ/yosys](https://github.com/YosysHQ/yosys) first, then choose **one** of the following setup methods:
+
+### Option A: Local build (no Docker)
+
+`make init_local` will download and build CUDD, NANGATE45, OpenSTA, and yosys-slang in one step:
 
 ```shell
-apt install -y yosys docker
-# or
-brew install yosys docker
-# or
-# https://github.com/YosysHQ/oss-cad-suite-build
+apt install -y yosys  # or: brew install yosys
+make init_local
+```
 
-make init
+### Option B: Docker-based
 
-# install yosys-slang
+```shell
+apt install -y yosys docker  # or: brew install yosys docker
+make init_opensta  # clone OpenSTA and build Docker image
+make init          # download NANGATE45
+
+# install yosys-slang manually
 git clone --recursive https://github.com/povik/yosys-slang
-cd yosys-slang
-make -j$(nproc)
-make install
+cd yosys-slang && make -j$(nproc) && make install
 ```
 
 ## Usage Example
 
 ```shell
-# run sta and show result with default gcd.v
+# run sta (Docker) and show result with default gcd.v
 make sta show
+
+# run sta locally (no Docker) and show result
+make sta_local show
 
 # run sta with custom frequency with default gcd.v
 make sta CLK_FREQ_MHZ=100
@@ -38,6 +46,15 @@ make sta DESIGN=top_of_design RTL_FILES="/path/to/top.v /path/to/perip.v ..." VE
 
 # support system verilog
 make sta DESIGN=top_of_design RTL_FILES="/path/to/top.sv /path/to/perip.sv ..." VERILOG_INCLUDE_DIRS="/path/to/top.svh" CLK_FREQ_MHZ=500
+
+# detailed timing report (Docker / local)
+make sta_detail
+make sta_detail_local
+
+# generate dot diagrams (default svg, or specify format)
+make dot
+make dot DOT_FORMAT=svg
+
 # or see the example `Makefile` in the `benchmark/`
 ```
 
