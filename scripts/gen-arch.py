@@ -9,6 +9,7 @@ Works with both:
 """
 
 import json
+import math
 import re
 from argparse import ArgumentParser
 from collections import defaultdict
@@ -205,35 +206,105 @@ def _level_style(lvl):
 
 
 def _render_tree_node(lines, node_name, node, prefix_path, depth, current_level,
-                      cluster_counter, indent):
-    """Recursively render a hierarchy node as cluster or leaf box."""
+                      cluster_counter, indent, flow_rank=None, area_map=None,
+                      max_area=1.0):
+    """Recursively render a hierarchy node as cluster or leaf box.
+
+    If area_map is provided, node sizes are proportional to physical area.
+    """
     has_children = bool(node["children"]) and current_level < depth
     sig_count = node["count"]
     color, bgcolor, fillcolor, pw, fs = _level_style(current_level - 1)
+    rank_suffix = f" | R{flow_rank}" if flow_rank is not None and current_level == 1 else ""
+
+    # Compute area label and sizing for this node (using prefix_path root to look up)
+    root_mod = prefix_path.split(".")[0]
+    area_val = area_map.get(root_mod, 0.0) if area_map else 0.0
+    area_label = ""
+    if area_val > 0:
+        if area_val >= 1000:
+            area_label = f" | {area_val/1000:.1f}K µm²"
+        else:
+            area_label = f" | {area_val:.0f} µm²"
 
     if has_children:
         cid = f"cluster_{next(cluster_counter)}"
         lines.append(f"{indent}subgraph {cid} {{")
-        lines.append(f'{indent}  label="{node_name}\\n({sig_count} sigs)";')
+        lines.append(f'{indent}  label="{node_name} ({sig_count} sigs){rank_suffix}{area_label}";')
         lines.append(f"{indent}  style=rounded; color={color}; penwidth={pw};")
         lines.append(f"{indent}  bgcolor={bgcolor};")
         lines.append(f'{indent}  fontname="Helvetica"; fontsize={fs};')
 
-        for child_name in sorted(node["children"].keys()):
-            child = node["children"][child_name]
-            child_path = f"{prefix_path}.{child_name}"
-            _render_tree_node(
-                lines, child_name, child, child_path,
-                depth, current_level + 1, cluster_counter, indent + "  "
-            )
+        sorted_children = sorted(node["children"].keys())
+        n_children = len(sorted_children)
+        # Multi-column layout: split children into columns when too many
+        max_per_col = 4
+        if n_children > max_per_col:
+            n_cols = min((n_children + max_per_col - 1) // max_per_col, 4)
+            col_size = (n_children + n_cols - 1) // n_cols
+            columns = []
+            for ci in range(n_cols):
+                start = ci * col_size
+                end = min(start + col_size, n_children)
+                columns.append(sorted_children[start:end])
+
+            col_first_nodes = []
+            for ci, col_children in enumerate(columns):
+                col_cid = f"cluster_{next(cluster_counter)}"
+                lines.append(f"{indent}  subgraph {col_cid} {{")
+                lines.append(f"{indent}    label=\"\"; style=invis; margin=2;")
+                for child_name in col_children:
+                    child = node["children"][child_name]
+                    child_path = f"{prefix_path}.{child_name}"
+                    _render_tree_node(
+                        lines, child_name, child, child_path,
+                        depth, current_level + 1, cluster_counter,
+                        indent + "    ",
+                        area_map=area_map, max_area=max_area
+                    )
+                lines.append(f"{indent}  }}")
+                # Record first leaf node of each column for invisible edges
+                first_child = col_children[0]
+                first_path = f"{prefix_path}.{first_child}"
+                # Find the leaf node ID (may be deeper if child has children)
+                fc_node = node["children"][first_child]
+                while fc_node["children"] and current_level + 1 < depth:
+                    fc_first = sorted(fc_node["children"].keys())[0]
+                    first_path = f"{first_path}.{fc_first}"
+                    fc_node = fc_node["children"][fc_first]
+                col_first_nodes.append(first_path)
+
+            # Invisible edges between columns to enforce left→right ordering
+            for ci in range(len(col_first_nodes) - 1):
+                lines.append(
+                    f'{indent}  "{col_first_nodes[ci]}" -> "{col_first_nodes[ci+1]}"'
+                    f" [style=invis, weight=100];"
+                )
+        else:
+            for child_name in sorted_children:
+                child = node["children"][child_name]
+                child_path = f"{prefix_path}.{child_name}"
+                _render_tree_node(
+                    lines, child_name, child, child_path,
+                    depth, current_level + 1, cluster_counter, indent + "  ",
+                    area_map=area_map, max_area=max_area
+                )
 
         lines.append(f"{indent}}}")
     else:
         node_id = prefix_path
+        # Scale node size proportionally to sqrt(area / max_area)
+        size_attrs = ""
+        if area_map and max_area > 0 and area_val > 0:
+            ratio = area_val / max_area
+            # Width from 1.5 (min) to 4.5 (max), height from 0.8 to 2.2
+            w = 1.5 + 3.0 * math.sqrt(ratio)
+            h = 0.8 + 1.4 * math.sqrt(ratio)
+            size_attrs = f" width={w:.2f}, height={h:.2f},"
         lines.append(
-            f'{indent}"{node_id}" [label="{node_name}\\n({sig_count} sigs)",'
+            f'{indent}"{node_id}" [label="{node_name}\\n({sig_count} sigs){rank_suffix}{area_label}",'
             f" shape=box, style=filled, fillcolor={fillcolor},"
-            f" penwidth={pw}];"
+            f"{size_attrs} penwidth={pw}];"
         )
 
 
@@ -328,6 +399,111 @@ def _group_ports_by_module(port_mods, top_ports):
     return dict(groups)
 
 
+def _parse_liberty_areas(liberty_path):
+    """Parse a Liberty (.lib) file and return {cell_type: area} mapping."""
+    cell_areas = {}
+    current_cell = None
+    with open(liberty_path, "r") as f:
+        for line in f:
+            stripped = line.strip()
+            # Match: cell (CELL_NAME) {
+            m = re.match(r'cell\s*\(\s*"?(\w+)"?\s*\)', stripped)
+            if m:
+                current_cell = m.group(1)
+                continue
+            # Match: area : 1.234 ;
+            if current_cell:
+                m = re.match(r'area\s*:\s*([\d.eE+\-]+)\s*;', stripped)
+                if m:
+                    cell_areas[current_cell] = float(m.group(1))
+                    current_cell = None
+    return cell_areas
+
+
+def _compute_module_areas(syn_mod, modules, cell_areas):
+    """Compute physical area per module from post-synth JSON.
+
+    Maps each NanGate45 cell to a module prefix via net bit connections,
+    with iterative propagation through auto-generated intermediate wires.
+
+    Args:
+        syn_mod: The post-synth top module dict from write_json.
+        modules: {mod_name: sig_count} from pre-synth hierarchy extraction.
+        cell_areas: {cell_type: area} from liberty parsing.
+
+    Returns:
+        {mod_name: area_um2} for each module, plus "__unassigned__" for unmapped cells.
+    """
+    netnames = syn_mod.get("netnames", {})
+    cells = syn_mod.get("cells", {})
+
+    # Build bit → module prefix mapping from hierarchical net names
+    bit_to_prefix = defaultdict(set)
+    for name, info in netnames.items():
+        if name.startswith("$") or "." not in name:
+            continue
+        prefix = name.split(".")[0]
+        if prefix not in modules:
+            continue
+        for bit in info.get("bits", []):
+            if isinstance(bit, int):
+                bit_to_prefix[bit].add(prefix)
+
+    # Build cell→bits and bit→cells index for propagation
+    cell_bits = {}  # cell_name → set of bit ints
+    bit_to_cells = defaultdict(set)  # bit → set of cell_names
+    for cell_name, cell_info in cells.items():
+        bits = set()
+        for conn_bits in cell_info.get("connections", {}).values():
+            for bit in conn_bits:
+                if isinstance(bit, int):
+                    bits.add(bit)
+                    bit_to_cells[bit].add(cell_name)
+        cell_bits[cell_name] = bits
+
+    # Pass 1: assign cells directly connected to hierarchical nets
+    cell_module = {}  # cell_name → mod_name
+    for cell_name, bits in cell_bits.items():
+        prefix_votes = defaultdict(int)
+        for bit in bits:
+            for pfx in bit_to_prefix.get(bit, set()):
+                prefix_votes[pfx] += 1
+        if prefix_votes:
+            cell_module[cell_name] = max(prefix_votes, key=lambda m: prefix_votes[m])
+
+    # Pass 2+: propagate through shared wires (iterate until stable)
+    for _ in range(5):
+        newly_assigned = {}
+        for cell_name, bits in cell_bits.items():
+            if cell_name in cell_module:
+                continue
+            # Check neighbor cells (sharing a wire bit) that are already assigned
+            neighbor_votes = defaultdict(int)
+            for bit in bits:
+                for neighbor in bit_to_cells.get(bit, set()):
+                    if neighbor != cell_name and neighbor in cell_module:
+                        neighbor_votes[cell_module[neighbor]] += 1
+            if neighbor_votes:
+                newly_assigned[cell_name] = max(
+                    neighbor_votes, key=lambda m: neighbor_votes[m]
+                )
+        if not newly_assigned:
+            break
+        cell_module.update(newly_assigned)
+
+    # Sum areas per module
+    mod_areas = defaultdict(float)
+    for cell_name, cell_info in cells.items():
+        cell_type = cell_info.get("type", "")
+        area = cell_areas.get(cell_type, 0.0)
+        if area <= 0:
+            continue
+        mod = cell_module.get(cell_name, "__unassigned__")
+        mod_areas[mod] += area
+
+    return dict(mod_areas)
+
+
 def _compute_flow_ranks(modules, bridges):
     """Compute topological rank for each module to guide LR layout.
 
@@ -407,10 +583,24 @@ def _compute_flow_ranks(modules, bridges):
     return {m: 0 for m in all_mods}
 
 
-def generate_dot_from_nets(top_name, top_mod, depth):
+def generate_dot_from_nets(top_name, top_mod, depth, area_map=None):
     """Generate arch diagram from net name hierarchy (for flat designs)."""
     top_ports = top_mod.get("ports", {})
     modules, bridges, tree = extract_hierarchy_from_nets(top_mod)
+
+    # Compute pipeline flow ranks before rendering
+    flow_ranks = _compute_flow_ranks(modules, bridges)
+    max_rank = max(flow_ranks.values()) if flow_ranks else 0
+    n_bridges = sum(1 for b in bridges if ">" not in b)
+    n_bcast = sum(1 for b in bridges if ">" in b)
+
+    total_area = sum(area_map.values()) if area_map else 0
+    area_info = f", total area={total_area/1000:.1f}K µm²" if total_area > 0 else ""
+    graph_label = (
+        f"{top_name} | depth={depth}, modules={len(modules)},"
+        f" bridges={n_bridges}, broadcast={n_bcast}, pipeline stages={max_rank+1}"
+        f"{area_info}"
+    )
 
     lines = []
     lines.append(f'digraph "{top_name}" {{')
@@ -418,8 +608,8 @@ def generate_dot_from_nets(top_name, top_mod, depth):
     lines.append("  compound=true;")
     lines.append("  splines=spline;")
     lines.append('  labelloc="t";')
-    lines.append(f'  label="{top_name} (depth={depth})";')
-    lines.append('  fontsize=20; fontname="Helvetica";')
+    lines.append(f'  label="{graph_label}";')
+    lines.append('  fontsize=16; fontname="Helvetica";')
     lines.append('  node [fontname="Helvetica", fontsize=12, margin="0.2,0.1"];')
     lines.append('  edge [fontname="Helvetica", fontsize=9, color=gray40];')
     lines.append("  nodesep=0.5; ranksep=1.2;")
@@ -453,26 +643,6 @@ def generate_dot_from_nets(top_name, top_mod, depth):
 
     lines.append("")
 
-    # Module nodes (recursive)
-    cluster_counter = _counter()
-    for mod_name in sorted(tree.keys()):
-        node = tree[mod_name]
-        _render_tree_node(
-            lines, mod_name, node, mod_name,
-            depth, 1, cluster_counter, "  "
-        )
-    # Modules without children in tree (no sub-hierarchy)
-    for mod_name in sorted(modules.keys()):
-        if mod_name not in tree:
-            sig_count = modules[mod_name]
-            lines.append(
-                f'  "{mod_name}" [label="{mod_name}\\n({sig_count} signals)",'
-                ' shape=box, style="filled,rounded", fillcolor=lightyellow,'
-                " penwidth=2];"
-            )
-
-    lines.append("")
-
     # Helper to find leaf node for edge targeting
     def _first_leaf(mod_name):
         """Find the first leaf node ID inside a module's tree for edge targeting."""
@@ -488,8 +658,43 @@ def generate_dot_from_nets(top_name, top_mod, depth):
             cur_depth += 1
         return path
 
-    # Compute flow ranks for edge weight/constraint decisions
-    flow_ranks = _compute_flow_ranks(modules, bridges)
+    # Module nodes (recursive), annotating with rank at level-1
+    max_area = max(area_map.values()) if area_map else 1.0
+    cluster_counter = _counter()
+    for mod_name in sorted(tree.keys()):
+        node = tree[mod_name]
+        _render_tree_node(
+            lines, mod_name, node, mod_name,
+            depth, 1, cluster_counter, "  ",
+            flow_rank=flow_ranks.get(mod_name),
+            area_map=area_map, max_area=max_area
+        )
+    # Modules without children in tree (no sub-hierarchy)
+    for mod_name in sorted(modules.keys()):
+        if mod_name not in tree:
+            sig_count = modules[mod_name]
+            rank_val = flow_ranks.get(mod_name)
+            rk = f" | R{rank_val}" if rank_val is not None else ""
+            area_val = area_map.get(mod_name, 0.0) if area_map else 0.0
+            area_label = ""
+            if area_val > 0:
+                if area_val >= 1000:
+                    area_label = f" | {area_val/1000:.1f}K µm²"
+                else:
+                    area_label = f" | {area_val:.0f} µm²"
+            size_attrs = ""
+            if area_map and max_area > 0 and area_val > 0:
+                ratio = area_val / max_area
+                w = 1.5 + 3.0 * math.sqrt(ratio)
+                h = 0.8 + 1.4 * math.sqrt(ratio)
+                size_attrs = f" width={w:.2f}, height={h:.2f},"
+            lines.append(
+                f'  "{mod_name}" [label="{mod_name}\\n({sig_count} sigs){rk}{area_label}",'
+                f' shape=box, style="filled,rounded", fillcolor=lightyellow,'
+                f"{size_attrs} penwidth=2];"
+            )
+
+    lines.append("")
 
     # Add invisible edges between adjacent ranks to enforce flow ordering.
     # This gives Graphviz strong hints without conflicting with clusters.
@@ -522,14 +727,15 @@ def generate_dot_from_nets(top_name, top_mod, depth):
 
         if is_broadcast:
             bus_name = bridge_name.split(">")[0]
-            label = f"{bus_name}\\n({count} sigs)"
+            label = f"{bus_name} ({count}s) bcast"
             lines.append(
                 f'  "{src_node}" -> "{dst_node}"'
                 f' [label="{label}", penwidth=1.5, style=dashed,'
                 f" color=coral3, weight=1, constraint=false];"
             )
         else:
-            label = f"{bridge_name}\\n({count} sigs)"
+            tag = "back" if is_back_edge else "fwd"
+            label = f"{bridge_name} ({count}s) {tag}"
             if is_back_edge:
                 lines.append(
                     f'  "{src_node}" -> "{dst_node}"'
@@ -677,6 +883,247 @@ def generate_dot_from_modules(top_name, top_mod, modules, depth):
     return "\n".join(lines)
 
 
+# Pastel color palette for treemap blocks
+_TREEMAP_COLORS = [
+    "#FFDAB9", "#B0E0E6", "#FFFACD", "#D8BFD8", "#F0E68C",
+    "#C1FFC1", "#FFB6C1", "#E0FFFF", "#FAFAD2", "#DDA0DD",
+    "#F5DEB3", "#B0C4DE", "#FFE4B5", "#98FB98", "#FFC0CB",
+]
+
+
+def _squarify_layout(items, x, y, w, h):
+    """Squarified treemap layout.
+
+    items: list of (name, area) sorted by area descending.
+    Returns: list of (name, area, rx, ry, rw, rh).
+    """
+    if not items:
+        return []
+    total = sum(a for _, a in items)
+    if total <= 0:
+        return []
+
+    results = []
+    remaining = list(items)
+
+    def _layout_row(row, rx, ry, rw, rh, horizontal):
+        row_area = sum(a for _, a in row)
+        if horizontal:
+            row_h = row_area / (total / h * rw) if rw > 0 else rh
+            row_h = min(row_h, rh)
+            cx = rx
+            for name, area in row:
+                bw = (area / row_area) * rw if row_area > 0 else 0
+                results.append((name, area, cx, ry, bw, row_h))
+                cx += bw
+            return rx, ry + row_h, rw, rh - row_h
+        else:
+            row_w = row_area / (total / w * rh) if rh > 0 else rw
+            row_w = min(row_w, rw)
+            cy = ry
+            for name, area in row:
+                bh = (area / row_area) * rh if row_area > 0 else 0
+                results.append((name, area, rx, cy, row_w, bh))
+                cy += bh
+            return rx + row_w, ry, rw - row_w, rh
+
+    def _worst_ratio(row, side):
+        row_area = sum(a for _, a in row)
+        if row_area <= 0 or side <= 0:
+            return float("inf")
+        s2 = (row_area / total * (w * h)) if total > 0 else 0
+        ratios = []
+        for _, a in row:
+            frac = a / row_area if row_area > 0 else 0
+            bw = frac * side
+            bh = s2 / side if side > 0 else 0
+            if bw > 0 and bh > 0:
+                ratios.append(max(bw / bh, bh / bw))
+        return max(ratios) if ratios else float("inf")
+
+    cx, cy, cw, ch = x, y, w, h
+    while remaining:
+        horizontal = cw >= ch
+        side = cw if horizontal else ch
+        row = [remaining[0]]
+        remaining = remaining[1:]
+        current_worst = _worst_ratio(row, side)
+
+        while remaining:
+            candidate = row + [remaining[0]]
+            new_worst = _worst_ratio(candidate, side)
+            if new_worst <= current_worst:
+                row = candidate
+                remaining = remaining[1:]
+                current_worst = new_worst
+            else:
+                break
+
+        # Lay out current row
+        row_area = sum(a for _, a in row)
+        row_frac = row_area / total if total > 0 else 0
+
+        if horizontal:
+            row_h = row_frac * ch
+            bx = cx
+            for name, area in row:
+                bw = (area / row_area) * cw if row_area > 0 else 0
+                results.append((name, area, bx, cy, bw, row_h))
+                bx += bw
+            cy += row_h
+            ch -= row_h
+        else:
+            row_w = row_frac * cw
+            by = cy
+            for name, area in row:
+                bh = (area / row_area) * ch if row_area > 0 else 0
+                results.append((name, area, cx, by, row_w, bh))
+                by += bh
+            cx += row_w
+            cw -= row_w
+
+    return results
+
+
+def generate_area_treemap_svg(top_name, area_map, canvas_w=1200, canvas_h=800):
+    """Generate a treemap SVG where each module is a rectangle proportional to area.
+
+    The canvas aspect ratio matches the physical dimensions derived from total area,
+    and mm dimension labels are shown along the edges.
+    """
+    # Filter out __unassigned__ and sort by area descending
+    items = sorted(
+        [(k, v) for k, v in area_map.items() if k != "__unassigned__" and v > 0],
+        key=lambda x: -x[1],
+    )
+    if not items:
+        return "<svg></svg>"
+
+    total_area = sum(a for _, a in items)
+
+    # Compute physical dimensions (µm) with 3:2 aspect ratio
+    # W × H = total_area, W/H = 3/2
+    phys_h_um = math.sqrt(total_area * 2 / 3)
+    phys_w_um = math.sqrt(total_area * 3 / 2)
+    phys_w_mm = phys_w_um / 1000
+    phys_h_mm = phys_h_um / 1000
+
+    # Adjust canvas to match physical aspect ratio
+    aspect = phys_w_um / phys_h_um
+    canvas_h = int(canvas_w / aspect)
+
+    margin_top = 50
+    margin_bottom = 60
+    margin_left = 60
+    margin_right = 60
+    draw_w = canvas_w - margin_left - margin_right
+    draw_h = canvas_h - margin_top - margin_bottom
+
+    rects = _squarify_layout(
+        items, margin_left, margin_top, draw_w, draw_h
+    )
+
+    svg_w = canvas_w
+    svg_h = canvas_h
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg"'
+        f' viewBox="0 0 {svg_w} {svg_h}"'
+        f' width="{svg_w}" height="{svg_h}"'
+        f' style="font-family:Helvetica,Arial,sans-serif;">',
+        f'<rect x="0" y="0" width="{svg_w}" height="{svg_h}" fill="white"/>',
+        # Title
+        f'<text x="{svg_w/2}" y="28" text-anchor="middle" font-size="18"'
+        f' font-weight="bold">{top_name} — Module Area Treemap'
+        f' (total: {total_area/1000:.1f}K µm²)</text>',
+    ]
+
+    # Draw treemap border
+    lines.append(
+        f'<rect x="{margin_left}" y="{margin_top}"'
+        f' width="{draw_w}" height="{draw_h}"'
+        f' fill="none" stroke="#333" stroke-width="2"/>'
+    )
+
+    # Width dimension annotation (bottom)
+    arr_y = margin_top + draw_h + 20
+    lines.append(
+        f'<line x1="{margin_left}" y1="{arr_y}" x2="{margin_left + draw_w}" y2="{arr_y}"'
+        f' stroke="#333" stroke-width="1.5" marker-start="url(#arrow-l)" marker-end="url(#arrow-r)"/>'
+    )
+    lines.append(
+        f'<text x="{margin_left + draw_w/2}" y="{arr_y + 18}"'
+        f' text-anchor="middle" font-size="14" font-weight="bold">'
+        f'{phys_w_mm:.3f} mm ({phys_w_um:.0f} µm)</text>'
+    )
+
+    # Height dimension annotation (right)
+    arr_x = margin_left + draw_w + 20
+    lines.append(
+        f'<line x1="{arr_x}" y1="{margin_top}" x2="{arr_x}" y2="{margin_top + draw_h}"'
+        f' stroke="#333" stroke-width="1.5" marker-start="url(#arrow-u)" marker-end="url(#arrow-d)"/>'
+    )
+    lines.append(
+        f'<text x="{arr_x + 8}" y="{margin_top + draw_h/2}"'
+        f' text-anchor="middle" font-size="14" font-weight="bold"'
+        f' transform="rotate(90, {arr_x + 8}, {margin_top + draw_h/2})">'
+        f'{phys_h_mm:.3f} mm ({phys_h_um:.0f} µm)</text>'
+    )
+
+    # Arrow marker defs
+    lines.insert(1, '<defs>'
+        '<marker id="arrow-r" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">'
+        '<path d="M0,0 L8,3 L0,6" fill="#333"/></marker>'
+        '<marker id="arrow-l" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">'
+        '<path d="M8,0 L0,3 L8,6" fill="#333"/></marker>'
+        '<marker id="arrow-d" markerWidth="6" markerHeight="8" refX="3" refY="8" orient="auto">'
+        '<path d="M0,0 L3,8 L6,0" fill="#333"/></marker>'
+        '<marker id="arrow-u" markerWidth="6" markerHeight="8" refX="3" refY="0" orient="auto">'
+        '<path d="M0,8 L3,0 L6,8" fill="#333"/></marker>'
+        '</defs>')
+
+    for i, (name, area, rx, ry, rw, rh) in enumerate(rects):
+        color = _TREEMAP_COLORS[i % len(_TREEMAP_COLORS)]
+        pct = area / total_area * 100
+        area_str = f"{area/1000:.1f}K" if area >= 1000 else f"{area:.0f}"
+
+        # Rectangle with 2px gap for visual separation
+        gap = 2
+        lines.append(
+            f'<rect x="{rx+gap:.1f}" y="{ry+gap:.1f}"'
+            f' width="{max(rw-2*gap, 0):.1f}" height="{max(rh-2*gap, 0):.1f}"'
+            f' fill="{color}" stroke="#666" stroke-width="1.5" rx="4"/>'
+        )
+
+        # Labels: module name, area, percentage
+        cx = rx + rw / 2
+        cy = ry + rh / 2
+        # Adaptive font size based on rect dimensions
+        fs_name = min(rw / max(len(name), 1) * 1.4, rh / 4, 28)
+        fs_detail = fs_name * 0.65
+
+        if rw > 40 and rh > 30:
+            lines.append(
+                f'<text x="{cx:.1f}" y="{cy - fs_detail * 0.4:.1f}"'
+                f' text-anchor="middle" font-size="{fs_name:.1f}"'
+                f' font-weight="bold">{name}</text>'
+            )
+            lines.append(
+                f'<text x="{cx:.1f}" y="{cy + fs_name * 0.7:.1f}"'
+                f' text-anchor="middle" font-size="{fs_detail:.1f}"'
+                f' fill="#444">{area_str} µm² ({pct:.1f}%)</text>'
+            )
+        elif rw > 20 and rh > 15:
+            # Smaller rect — name only
+            lines.append(
+                f'<text x="{cx:.1f}" y="{cy + fs_name * 0.35:.1f}"'
+                f' text-anchor="middle" font-size="{max(fs_name, 8):.1f}"'
+                f' font-weight="bold">{name}</text>'
+            )
+
+    lines.append("</svg>")
+    return "\n".join(lines)
+
+
 def main():
     parser = ArgumentParser(
         description="Generate module-level architecture diagram from yosys JSON"
@@ -702,6 +1149,18 @@ def main():
         default=None,
         help="Top module name (auto-detected if not given)",
     )
+    parser.add_argument(
+        "-l",
+        "--liberty",
+        default=None,
+        help="Liberty (.lib) file for cell area data",
+    )
+    parser.add_argument(
+        "-s",
+        "--syn-json",
+        default=None,
+        help="Post-synthesis JSON from yosys write_json (for per-module area)",
+    )
     args = parser.parse_args()
 
     with open(args.json_file, "r") as f:
@@ -723,17 +1182,56 @@ def main():
     print(f"Top module: {top_name}")
     print(f"Design modules in JSON: {len(design_modules)}")
 
+    # Compute per-module area if liberty + post-synth JSON are provided
+    area_map = None
+    if args.liberty and args.syn_json:
+        import os
+        if os.path.isfile(args.liberty) and os.path.isfile(args.syn_json):
+            print(f"Parsing liberty: {args.liberty}")
+            cell_areas = _parse_liberty_areas(args.liberty)
+            print(f"  Cell types with area: {len(cell_areas)}")
+
+            print(f"Loading post-synth JSON: {args.syn_json}")
+            with open(args.syn_json, "r") as f:
+                syn_data = json.load(f)
+            syn_modules = syn_data.get("modules", {})
+            syn_top_name, syn_top_mod = find_top_module(syn_modules, args.top)
+
+            # Need pre-synth module list for prefix matching
+            # Extract it from pre-synth hier.json (same logic as generate_dot_from_nets)
+            modules_for_area, _, _ = extract_hierarchy_from_nets(top_mod)
+            area_map = _compute_module_areas(syn_top_mod, modules_for_area, cell_areas)
+
+            total = sum(area_map.values())
+            assigned = sum(v for k, v in area_map.items() if k != "__unassigned__")
+            print(f"  Total area mapped: {total:.0f} µm²")
+            print(f"  Assigned to modules: {assigned:.0f} µm² ({assigned/total*100:.1f}%)" if total > 0 else "")
+            for mod, a in sorted(area_map.items(), key=lambda x: -x[1]):
+                if mod == "__unassigned__":
+                    continue
+                print(f"    {mod}: {a:.0f} µm²")
+        else:
+            print("Warning: liberty or syn-json file not found, skipping area computation")
+
     if has_submod and len(design_modules) > 1:
         print("Mode: multi-module (hierarchy from JSON structure)")
         dot_content = generate_dot_from_modules(top_name, top_mod, modules, args.depth)
     else:
         print("Mode: flat design (hierarchy reconstructed from net names)")
-        dot_content = generate_dot_from_nets(top_name, top_mod, args.depth)
+        dot_content = generate_dot_from_nets(top_name, top_mod, args.depth, area_map=area_map)
 
     output_path = args.output or args.json_file.replace(".json", "_arch.dot")
     with open(output_path, "w") as f:
         f.write(dot_content)
     print(f"Architecture diagram written to: {output_path}")
+
+    # Generate area treemap SVG if area data is available
+    if area_map:
+        treemap_svg = generate_area_treemap_svg(top_name, area_map)
+        treemap_path = output_path.replace(".dot", "_area.svg")
+        with open(treemap_path, "w") as f:
+            f.write(treemap_svg)
+        print(f"Area treemap SVG written to: {treemap_path}")
 
 
 if __name__ == "__main__":

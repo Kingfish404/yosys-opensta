@@ -52,9 +52,7 @@ if {[info exist VERILOG_INCLUDE_DIRS]} {
 
 
 # read verilog files
-foreach file $VERILOG_FILES {
-    read_slang {*}$vIdirsArgs --top $DESIGN $file
-}
+read_slang {*}$vIdirsArgs --top $DESIGN {*}$VERILOG_FILES
 
 
 # Read blackbox stubs of standard/io/ip/memory cells. This allows for standard/io/ip/memory cell (or
@@ -123,6 +121,9 @@ insbuf -buf {*}$MIN_BUF_CELL_AND_PORTS
 
 # remove unused cells and wires
 opt_clean -purge
+
+# write post-synthesis JSON (NanGate45 cells with net connections, for per-module area)
+write_json $RESULT_DIR/${DESIGN}_syn.json
 
 # reports
 tee -o $RESULT_DIR/synth_check.txt check
