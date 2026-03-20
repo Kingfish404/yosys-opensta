@@ -11,12 +11,15 @@ puts "VERILOG_FILES: $VERILOG_FILES"
 puts "VERILOG_INCLUDE_DIRS: $VERILOG_INCLUDE_DIRS"
 puts "NETLIST_SYN_V: $NETLIST_SYN_V"
 
-set FOUNDARY_PATH           "[file dirname [info script]]/../nangate45"
-set MERGED_LIB_FILE         "$FOUNDARY_PATH/lib/merged.lib"
-set BLACKBOX_V_FILE         "$FOUNDARY_PATH/verilog/blackbox.v"
-set CLKGATE_MAP_FILE        "$FOUNDARY_PATH/verilog/cells_clkgate.v"
-set LATCH_MAP_FILE          "$FOUNDARY_PATH/verilog/cells_latch.v"
-set BLACKBOX_MAP_TCL        "$FOUNDARY_PATH/blackbox_map.tcl"
+set FOUNDARY_PATH           "[file dirname [info script]]/../lib/nangate45"
+set PLATFORM_CONFIG_DIR     "[file dirname [info script]]/../platforms/nangate45"
+if {[info exists env(PLATFORM)]} {
+  set FOUNDARY_PATH         "[file dirname [info script]]/../lib/$::env(PLATFORM)"
+  set PLATFORM_CONFIG_DIR   "[file dirname [info script]]/../platforms/$::env(PLATFORM)"
+}
+
+# Source platform-specific synthesis configuration
+source "$PLATFORM_CONFIG_DIR/yosys_config.tcl"
 
 set CLK_FREQ_MHZ            500
 if {[info exists env(CLK_FREQ_MHZ)]} {
@@ -26,9 +29,7 @@ if {[info exists env(CLK_FREQ_MHZ)]} {
 }
 set CLK_PERIOD_NS           [expr 1000.0 / $CLK_FREQ_MHZ]
 
-set TIEHI_CELL_AND_PORT     "LOGIC1_X1 Z"
-set TIELO_CELL_AND_PORT     "LOGIC0_X1 Z"
-set MIN_BUF_CELL_AND_PORTS  "BUF_X1 A Z"
+# TIEHI/TIELO/BUF cells are set by yosys_config.tcl above
 
 #===========================================================
 #   main running
@@ -57,7 +58,9 @@ read_slang {*}$vIdirsArgs --top $DESIGN {*}$VERILOG_FILES
 
 # Read blackbox stubs of standard/io/ip/memory cells. This allows for standard/io/ip/memory cell (or
 # structural netlist support in the input verilog
-read_slang $BLACKBOX_V_FILE
+if {[info exist BLACKBOX_V_FILE] && $BLACKBOX_V_FILE ne ""} {
+  read_slang $BLACKBOX_V_FILE
+}
 
 # Apply toplevel parameters (if exist
 if {[info exist VERILOG_TOP_PARAMS]} {
@@ -68,13 +71,13 @@ if {[info exist VERILOG_TOP_PARAMS]} {
 
 
 # Read platform specific mapfile for OPENROAD_CLKGATE cells
-if {[info exist CLKGATE_MAP_FILE]} {
+if {[info exist CLKGATE_MAP_FILE] && $CLKGATE_MAP_FILE ne ""} {
     read_slang $CLKGATE_MAP_FILE
 }
 
 # Use hierarchy to automatically generate blackboxes for known memory macro.
 # Pins are enumerated for proper mapping
-if {[info exist BLACKBOX_MAP_TCL]} {
+if {[info exist BLACKBOX_MAP_TCL] && $BLACKBOX_MAP_TCL ne ""} {
     source $BLACKBOX_MAP_TCL
 }
 
@@ -90,7 +93,7 @@ synth  -top $DESIGN
 opt -purge
 
 # technology mapping of latches
-if {[info exist LATCH_MAP_FILE]} {
+if {[info exist LATCH_MAP_FILE] && $LATCH_MAP_FILE ne ""} {
   techmap -map $LATCH_MAP_FILE
 }
 
@@ -122,7 +125,7 @@ insbuf -buf {*}$MIN_BUF_CELL_AND_PORTS
 # remove unused cells and wires
 opt_clean -purge
 
-# write post-synthesis JSON (NanGate45 cells with net connections, for per-module area)
+# write post-synthesis JSON (cells with net connections, for per-module area)
 write_json $RESULT_DIR/${DESIGN}_syn.json
 
 # reports

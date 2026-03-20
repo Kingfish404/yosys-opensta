@@ -10,13 +10,17 @@ if {[info exists env(PROJ_PATH)]} {
 } else {
   puts "Warning: Environment PROJ_PATH is not defined. Use $PROJ_PATH by default."
 }
+set PLATFORM nangate45
+if {[info exists env(PLATFORM)]} {
+  set PLATFORM $::env(PLATFORM)
+}
 set DESIGN $::env(DESIGN)
 set RESULT_DIR $::env(RESULT_DIR)
 set NETLIST_SYN_V $::env(NETLIST_SYN_V)
 puts "DESIGN: $DESIGN"
 puts "NETLIST_SYN_V: $NETLIST_SYN_V"
 
-read_liberty $PROJ_PATH/nangate45/lib/merged.lib
+read_liberty $PROJ_PATH/lib/$PLATFORM/lib/merged.lib
 
 # Read source-annotated netlist (preserves src attributes from yosys)
 set SRC_NETLIST $PROJ_PATH/$RESULT_DIR/${DESIGN}.netlist.src.v

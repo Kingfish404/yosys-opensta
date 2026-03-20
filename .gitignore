@@ -1,6 +1,9 @@
 OpenSTA/
-nangate45/
-result
+OpenROAD/
+yosys-slang/
+lib/
+tmp/
+result/
 *.log
 
 cudd-*

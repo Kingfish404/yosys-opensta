@@ -4,110 +4,128 @@ Use open-source EDA tools for ASIC synthesis ([YosysHQ/yosys](https://github.com
 
 Inspired by [OSCPU/yosys-sta](https://github.com/OSCPU/yosys-sta).
 
-## Dependency and Environment
-
-Install [YosysHQ/yosys](https://github.com/YosysHQ/yosys) first, then choose **one** of the following setup methods:
-
-### Option A: Local build (no Docker)
-
-`make init_local` will download and build CUDD, NANGATE45, OpenSTA, OpenROAD, and yosys-slang in one step:
+## Quick Start
 
 ```shell
-apt install -y yosys  # or: brew install yosys
-make init_local
+# 1. Install prerequisites
+apt install -y yosys klayout  # or: brew install yosys klayout
+
+# 2. Build all tools + download NanGate45 PDK
+make setup
+
+# 3. Run the full flow (synthesis → STA → PnR)
+make flow
+
+# 4. View results
+make show          # print synthesis + STA summary
+make viz           # generate layout images
+make gui           # open interactive OpenROAD GUI
 ```
 
-> **Note**: Building OpenROAD from source requires many dependencies (cmake, boost, swig, tcl, etc.).
-> See [OpenROAD build instructions](https://github.com/The-OpenROAD-Project/OpenROAD/blob/master/docs/user/Build.md) for full dependency list.
+Run `make help` to see all available targets.
+
+## Setup
+
+### Option A: Full local build (recommended)
+
+```shell
+make setup
+```
+
+This builds CUDD, OpenSTA, yosys-slang, OpenROAD, and downloads the NanGate45 PDK.
+
+> **Note**: Building OpenROAD requires many dependencies (cmake, boost, swig, tcl, etc.).
+> See [OpenROAD build instructions](https://github.com/The-OpenROAD-Project/OpenROAD/blob/master/docs/user/Build.md).
 > On Ubuntu: `sudo ./OpenROAD/etc/DependencyInstaller.sh`
 
-### Option B: Docker-based
+Alternatively, build individual components:
 
 ```shell
-apt install -y yosys docker  # or: brew install yosys docker
-make init_opensta  # clone OpenSTA and build Docker image
-make init          # download NANGATE45
-
-# install yosys-slang manually
-git clone --recursive https://github.com/povik/yosys-slang
-cd yosys-slang && make -j$(nproc) && make install
+make setup-nangate45    # Download NanGate45 PDK only
+make setup-opensta      # Build CUDD + OpenSTA only
+make setup-openroad     # Build OpenROAD only
 ```
 
-For PnR via Docker, also set up OpenROAD:
-```shell
-# Option 1: Pull pre-built image (recommended)
-docker pull openroad/openroad:latest
-docker tag openroad/openroad:latest openroad
-# or build using dockerfile (takes much longer)
-make init_openroad_docker
+### Option B: Docker
 
-# Option 2: Build from source
-make init_openroad
+```shell
+make setup-docker       # Pull/build OpenSTA + OpenROAD Docker images
+make setup-nangate45    # Download NanGate45 PDK
+
+# Then use '-docker' suffix for flow targets:
+make sta-docker show
+make pnr-docker
 ```
 
-## Usage Example
+### ASAP7 Platform (7nm)
+
+The default platform is NanGate45 (45nm). To use ASAP7 instead:
 
 ```shell
-# run sta (Docker) and show result with default gcd.v
-make sta show
-
-# run sta locally (no Docker) and show result
-make sta_local show
-
-# run sta with custom frequency with default gcd.v
-make sta CLK_FREQ_MHZ=100
-
-# run with custom design
-make sta DESIGN=top_of_design RTL_FILES="/path/to/top.v /path/to/perip.v ..." VERILOG_INCLUDE_DIRS="/path/to/top.vh" CLK_FREQ_MHZ=100
-
-# support system verilog
-make sta DESIGN=top_of_design RTL_FILES="/path/to/top.sv /path/to/perip.sv ..." VERILOG_INCLUDE_DIRS="/path/to/top.svh" CLK_FREQ_MHZ=500
-
-# detailed timing report (Docker / local)
-make sta_detail
-make sta_detail_local
-
-# generate dot diagrams (default svg, or specify format)
-make dot
-make dot DOT_FORMAT=svg
-
-# or see the example `Makefile` in the `benchmark/`
+make setup-asap7                # Download ASAP7 PDK files
+make flow PLATFORM=asap7        # Run full flow with ASAP7
 ```
 
-Hint: Don't forget to remove the `DPI-C` and `$` macro related code in the system verilog file.
+> **Directory layout**: Platform build configs live in `platforms/<platform>/` (tracked in git).
+> Downloaded PDK data lives in `lib/<platform>/` (gitignored).
 
-## Physical Design (Place & Route)
+## Usage
 
-After synthesis and STA, run OpenROAD for floorplanning, placement, CTS, and routing:
+### Synthesis & Timing Analysis
 
 ```shell
-# Full flow: synthesis → STA → PnR (local)
-make flow_local
+# Synthesis + STA with default example (gcd.v @ 50MHz)
+make syn                # synthesis only
+make sta                # STA (requires syn)
+make sta-detail         # detailed timing report
+make show               # print summary
 
-# Or run PnR separately (after syn + sta_local)
-make pnr_local
+# Custom design
+make sta DESIGN=my_core \
+    RTL_FILES="/path/to/top.v /path/to/sub.v" \
+    VERILOG_INCLUDE_DIRS="/path/to/inc" \
+    CLK_PORT_NAME=clk \
+    CLK_FREQ_MHZ=100
 
-# PnR via Docker
+# SystemVerilog is supported via yosys-slang
+make sta DESIGN=my_core RTL_FILES="/path/to/top.sv"
+
+# Architecture diagrams
+make viz-arch-dot                # generate dot → svg
+make viz-arch-dot DOT_FORMAT=png
+```
+
+> **Hint**: Remove `DPI-C` and `$` macro code from SystemVerilog files before synthesis.
+
+### Place & Route
+
+```shell
+# Full flow: syn → sta → pnr
+make flow
+
+# Or run PnR step separately (after syn + sta)
 make pnr
+make pnr-fast           # faster: fewer iterations, multi-threaded routing
 
 # Tunable parameters
-make pnr_local CORE_UTILIZATION=50 PLACE_DENSITY=0.70
+make pnr CORE_UTILIZATION=50 PLACE_DENSITY=0.70
 
-# Clean PnR results only (keep synthesis/STA)
-make clean_pnr
+# Full RTL-to-GDS
+make flow-gds
 ```
 
-**Tunable PnR parameters:**
+**PnR Parameters:**
 
-| Parameter           | Default | Description               |
-| ------------------- | ------- | ------------------------- |
-| `CORE_UTILIZATION`  | 40      | Core area utilization (%) |
-| `CORE_ASPECT_RATIO` | 1.0     | Floorplan aspect ratio    |
-| `PLACE_DENSITY`     | 0.60    | Global placement density  |
-| `MIN_ROUTING_LAYER` | metal2  | Bottom routing layer      |
-| `MAX_ROUTING_LAYER` | metal7  | Top routing layer         |
+| Parameter           | Default (nangate45) | Default (asap7) | Description              |
+| ------------------- | ------------------- | --------------- | ------------------------ |
+| `CORE_UTILIZATION`  | 40                  | 40              | Core area utilization (%) |
+| `CORE_ASPECT_RATIO` | 1.0                 | 1.0             | Floorplan aspect ratio   |
+| `PLACE_DENSITY`     | 0.60                | 0.60            | Global placement density |
+| `MIN_ROUTING_LAYER` | metal2              | M2              | Bottom routing layer     |
+| `MAX_ROUTING_LAYER` | metal7              | M7              | Top routing layer        |
+| `DR_THREADS`        | 0 (auto)            | 0 (auto)        | Detailed routing threads |
 
-**Output files** (in `result/<DESIGN>-<FREQ>MHz/pnr/`):
+**PnR Output Files** (in `result/<DESIGN>-<FREQ>MHz-pnr/`):
 
 | File                   | Description               |
 | ---------------------- | ------------------------- |
@@ -119,42 +137,58 @@ make clean_pnr
 | `power_final.rpt`      | Power report              |
 | `clock_skew_final.rpt` | Clock tree skew           |
 
-## Layout Visualization
-
-Generate chip layout images (like those on [theopenroadproject.org](https://theopenroadproject.org/)):
+### Visualization
 
 ```shell
-# Via OpenROAD (headless, requires xvfb-run on Linux)
-make viz_layout
+# Layout images (after PnR)
+make viz                # Python/matplotlib (no X11 needed)
+make viz-klayout        # KLayout batch mode (no X11 needed)
+make viz-openroad       # OpenROAD headless (requires xvfb)
 
-# Via KLayout (batch mode, no X11 needed)
-make viz_layout_klayout
+# Timing model plots (after STA)
+make viz-timing
 
 # Interactive GUI
-make gui            # OpenROAD GUI
-make gui_klayout    # KLayout GUI
+make gui                # OpenROAD GUI
+make gui-klayout        # KLayout GUI
 ```
 
-Generated images (in `result/<DESIGN>-<FREQ>MHz/images/`):
+**Layout Images** (in `result/<DESIGN>-<FREQ>MHz-pnr/images/`):
 
-| Image | Description |
-|-------|-------------|
-| `<DESIGN>_chip_full.png` | Complete chip layout (all layers) |
-| `<DESIGN>_chip_placement.png` | Cell placement view |
-| `<DESIGN>_chip_routing.png` | Routing layers only |
-| `<DESIGN>_chip_power.png` | Power distribution network |
-| `<DESIGN>_chip_clock.png` | Clock tree network |
-| `<DESIGN>_<stage>_full.png` | Per-stage snapshots (floorplan → placed → cts → routed → final) |
+| Image                        | Description                              |
+| ---------------------------- | ---------------------------------------- |
+| `<DESIGN>_chip_full.png`     | Complete chip layout (all layers)        |
+| `<DESIGN>_chip_placement.png`| Cell placement view                      |
+| `<DESIGN>_chip_routing.png`  | Routing layers only                      |
+| `<DESIGN>_chip_power.png`    | Power distribution network               |
+| `<DESIGN>_chip_clock.png`    | Clock tree network                       |
+| `<DESIGN>_<stage>_full.png`  | Per-stage snapshots (floorplan → final)  |
 
-## Documentation
+### Docker Variants
 
-See the source code or [OSCPU/yosys-sta](https://github.com/OSCPU/yosys-sta).
+Append `-docker` to flow targets:
+
+```shell
+make sta-docker show
+make sta-detail-docker
+make pnr-docker
+make pnr-fast-docker
+make viz-openroad-docker
+```
+
+### Clean
+
+```shell
+make clean              # Remove all results
+make clean-pnr          # Remove PnR results only (keep synthesis/STA)
+```
 
 ## Benchmark
 
-See the [benchmark](benchmark) directory. And the [third_party IP cores](benchmark/third_party/README.md).
+See the [benchmark](benchmark) directory and [third-party IP cores](benchmark/third_party/README.md).
 
 ## Reference & Acknowledgement
+
 - [OSCPU/yosys-sta](https://github.com/OSCPU/yosys-sta)
 - [YosysHQ/yosys: Yosys Open SYnthesis Suite](https://github.com/YosysHQ/yosys)
 - [parallaxsw/OpenSTA](https://github.com/parallaxsw/OpenSTA)
