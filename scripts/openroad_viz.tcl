@@ -20,10 +20,15 @@ if {[info exists env(PROJ_PATH)]} {
 set DESIGN      $::env(DESIGN)
 set PNR_RESULT_DIR $::env(PNR_RESULT_DIR)
 
-set PLATFORM_DIR $PROJ_PATH/nangate45
-set TECH_LEF     $PLATFORM_DIR/lef/NangateOpenCellLibrary.tech.lef
-set SC_LEF       $PLATFORM_DIR/lef/NangateOpenCellLibrary.macro.mod.lef
-set LIB_FILE     $PLATFORM_DIR/lib/NangateOpenCellLibrary_typical.lib
+set PLATFORM nangate45
+if {[info exists env(PLATFORM)]} {
+  set PLATFORM $::env(PLATFORM)
+}
+set PLATFORM_DIR $PROJ_PATH/platforms/$PLATFORM
+set LIB_DIR $PROJ_PATH/lib/$PLATFORM
+
+# Source platform-specific configuration
+source $PLATFORM_DIR/config.tcl
 
 set PNR_DIR $PROJ_PATH/$PNR_RESULT_DIR
 set IMG_DIR $PROJ_PATH/$PNR_RESULT_DIR/images

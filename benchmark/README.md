@@ -2,15 +2,24 @@
 
 ## Usage
 
-Evaluate target IP core is placed in [third_party](third_party) directory. See it's [README.md](third_party/README.md) for more details.
+Evaluate target IP cores placed in the [third_party](third_party) directory. See its [README.md](third_party/README.md) for more details.
 
 ```shell
-make sta_hazard3
-make sta_picorv32
-make sta_serv
+# Synthesis + STA only
+make sta-hazard3
+make sta-picorv32
+make sta-serv
+
+# Full flow (syn → sta → pnr)
+make flow-hazard3
+make flow-picorv32
+make flow-serv
+
+# Use ASAP7 platform
+make sta-hazard3 PLATFORM=asap7
 ```
 
-## Benchmark Pre Generated Results
+## Benchmark Pre-Generated Results
 
-Seen in [results](results) directory.
+See the [results](results) directory.
 

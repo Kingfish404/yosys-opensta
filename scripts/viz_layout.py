@@ -240,7 +240,7 @@ def parse_def(filepath: str) -> DEFData:
                         if d:
                             data.net_io_direction[net_name] = d
                 # Parse routed segments: ROUTED/NEW layer [TAPER] ( x y [ext] ) ...
-                for rm in re.finditer(r"(?:ROUTED|NEW)\s+(metal\S+)(?:\s+TAPER)?\s+(.+?)(?=(?:NEW|;|$))", cl):
+                for rm in re.finditer(r"(?:ROUTED|NEW)\s+(\S+?)(?:\s+TAPER)?\s+(.+?)(?=(?:NEW|;|$))", cl):
                     layer = rm.group(1)
                     seg_text = rm.group(2)
                     # Match ( x y ) or ( x y ext ) — take first 2 values, ignore optional 3rd
@@ -363,6 +363,16 @@ METAL_COLORS = {
     "metal8":  "#56d4dd",  # cyan
     "metal9":  "#e3b341",  # gold
     "metal10": "#8b949e",  # grey
+    # ASAP7 layer names
+    "M1":  "#58a6ff",
+    "M2":  "#f97583",
+    "M3":  "#85e89d",
+    "M4":  "#ffab70",
+    "M5":  "#b392f0",
+    "M6":  "#79c0ff",
+    "M7":  "#f692ce",
+    "M8":  "#56d4dd",
+    "M9":  "#e3b341",
 }
 
 # Line widths in points scaled per metal layer (higher = thicker)
@@ -370,6 +380,10 @@ METAL_LW = {
     "metal1": 0.15, "metal2": 0.20, "metal3": 0.25,
     "metal4": 0.35, "metal5": 0.40, "metal6": 0.50,
     "metal7": 0.70, "metal8": 0.80, "metal9": 1.0, "metal10": 1.0,
+    # ASAP7 layer names
+    "M1": 0.15, "M2": 0.20, "M3": 0.25,
+    "M4": 0.35, "M5": 0.40, "M6": 0.50,
+    "M7": 0.70, "M8": 0.80, "M9": 1.0,
 }
 
 def metal_color(layer: str) -> str:
@@ -428,11 +442,15 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
     # Row bands (alternating very subtle stripes)
     if data.rows:
         row_patches = []
+        # Compute row height from consecutive rows or fallback
+        default_rh = 2800 / dbu
+        if len(data.rows) > 1:
+            default_rh = abs(data.rows[1].y - data.rows[0].y) / dbu
         for idx, row in enumerate(data.rows):
             if idx % 2 != 0:
                 continue  # alternate rows only for subtlety
             rw = row.num * row.step_x / dbu
-            rh = 2800 / dbu  # NanGate45 row height = 1.4μm * 2 (DBU)
+            rh = row.step_y / dbu if row.step_y > 0 else default_rh  # row height from DEF
             row_patches.append(mpatches.Rectangle(
                 (row.x / dbu, row.y / dbu), rw, rh,
             ))
@@ -706,11 +724,12 @@ def main():
     if not lef_paths:
         # Look for LEF in the standard project layout
         proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        nangate_lef_dir = os.path.join(proj_root, "nangate45", "lef")
-        if os.path.isdir(nangate_lef_dir):
-            for f in sorted(os.listdir(nangate_lef_dir)):
+        platform = os.environ.get("PLATFORM", "nangate45")
+        platform_lef_dir = os.path.join(proj_root, "lib", platform, "lef")
+        if os.path.isdir(platform_lef_dir):
+            for f in sorted(os.listdir(platform_lef_dir)):
                 if f.endswith(".lef"):
-                    lef_paths.append(os.path.join(nangate_lef_dir, f))
+                    lef_paths.append(os.path.join(platform_lef_dir, f))
 
     cell_sizes = parse_lef_sizes(lef_paths)
 

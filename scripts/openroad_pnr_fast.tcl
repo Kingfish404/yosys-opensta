@@ -60,18 +60,16 @@ if {[info exists env(DR_THREADS)]} {
   set DR_THREADS $::env(DR_THREADS)
 }
 
-# NanGate45 platform paths
-set PLATFORM_DIR $PROJ_PATH/nangate45
-set TECH_LEF     $PLATFORM_DIR/lef/NangateOpenCellLibrary.tech.lef
-set SC_LEF       $PLATFORM_DIR/lef/NangateOpenCellLibrary.macro.mod.lef
-set LIB_FILE     $PLATFORM_DIR/lib/NangateOpenCellLibrary_typical.lib
-set PLACE_SITE   FreePDK45_38x28_10R_NP_162NW_34O
+# Platform paths
+set PLATFORM nangate45
+if {[info exists env(PLATFORM)]} {
+  set PLATFORM $::env(PLATFORM)
+}
+set PLATFORM_DIR $PROJ_PATH/platforms/$PLATFORM
+set LIB_DIR $PROJ_PATH/lib/$PLATFORM
 
-# Cells
-set FILL_CELLS      "FILLCELL_X1 FILLCELL_X2 FILLCELL_X4 FILLCELL_X8 FILLCELL_X16 FILLCELL_X32"
-set DONT_USE_CELLS  {TAPCELL_X1 FILLCELL_X1 AOI211_X1 OAI211_X1}
-set CTS_BUF_CELL    BUF_X4
-set CTS_BUF_LIST    {BUF_X4 BUF_X8 BUF_X16}
+# Source platform-specific configuration
+source $PLATFORM_DIR/config.tcl
 
 # Input / Output paths
 set NETLIST_FILE $PROJ_PATH/$RESULT_DIR/$NETLIST_SYN_V
@@ -125,16 +123,13 @@ initialize_floorplan \
 make_tracks
 
 # Set layer RC for parasitics estimation
-source $PLATFORM_DIR/setRC.tcl
+source $SET_RC_TCL
 
 # Place IO pins
-place_pins -hor_layers metal3 -ver_layers metal2
+place_pins -hor_layers $PIN_HOR_LAYER -ver_layers $PIN_VER_LAYER
 
 # Tap cells
-tapcell \
-  -distance 120 \
-  -tapcell_master "TAPCELL_X1" \
-  -endcap_master "TAPCELL_X1"
+platform_tapcell
 
 write_def $PNR_DIR/${DESIGN}_floorplan.def
 puts "Floorplan DEF written: $PNR_DIR/${DESIGN}_floorplan.def"
@@ -144,22 +139,7 @@ puts "Floorplan DEF written: $PNR_DIR/${DESIGN}_floorplan.def"
 #===========================================================
 puts "\n>>> Generating PDN ..."
 
-add_global_connection -net VDD -inst_pattern .* -pin_pattern {^VDD$} -power
-add_global_connection -net VDD -inst_pattern .* -pin_pattern {^VDDPE$}
-add_global_connection -net VDD -inst_pattern .* -pin_pattern {^VDDCE$}
-add_global_connection -net VSS -inst_pattern .* -pin_pattern {^VSS$} -ground
-add_global_connection -net VSS -inst_pattern .* -pin_pattern {^VSSE$}
-
-set_voltage_domain -power VDD -ground VSS
-
-define_pdn_grid -name "Core"
-add_pdn_stripe -followpins -layer metal1 -width 0.17
-add_pdn_stripe -layer metal4 -width 0.48 -pitch 56.0 -offset 2
-add_pdn_stripe -layer metal7 -width 1.40 -pitch 40.0 -offset 2
-add_pdn_connect -layers {metal1 metal4}
-add_pdn_connect -layers {metal4 metal7}
-
-pdngen
+platform_pdn 0
 
 #===========================================================
 # 4. Global Placement
@@ -214,15 +194,7 @@ puts "CTS DEF written: $PNR_DIR/${DESIGN}_cts.def"
 # 7. Global Routing
 #===========================================================
 puts "\n>>> Global routing ..."
-set_routing_layers \
-  -signal ${MIN_ROUTING_LAYER}-${MAX_ROUTING_LAYER} \
-  -clock metal3-${MAX_ROUTING_LAYER}
-
-set_global_routing_layer_adjustment metal2 0.8
-set_global_routing_layer_adjustment metal3 0.7
-set_global_routing_layer_adjustment metal4-${MAX_ROUTING_LAYER} 0.25
-
-set_macro_extension 2
+platform_routing_setup
 
 # FAST: reduced congestion iterations (15 → 5)
 global_route \
@@ -260,7 +232,7 @@ check_placement
 # 9b. Parasitics Extraction (OpenRCX)
 #===========================================================
 puts "\n>>> Extracting parasitics (OpenRCX) ..."
-set RCX_RULES $PLATFORM_DIR/rcx_patterns.rules
+set RCX_RULES $LIB_DIR/rcx_patterns.rules
 if {[file exists $RCX_RULES]} {
   define_process_corner -ext_model_index 0 X
   extract_parasitics -ext_model_file $RCX_RULES
@@ -325,13 +297,14 @@ if {[namespace exists ::gui] && [info commands gui::initialized] ne "" && [gui::
   puts "Layout image: $PNR_DIR/${DESIGN}_final.png"
 
   gui::clear_highlights
-  foreach layer {metal2 metal3 metal4 metal5 metal6 metal7 via1 via2 via3 via4 via5 via6} {
+  set viz_layers [concat $VIZ_METAL_LAYERS $VIZ_VIA_LAYERS]
+  foreach layer $viz_layers {
     gui::set_display_controls $layer visible false
   }
   gui::save_image $PNR_DIR/${DESIGN}_placement.png 2048 2048
   puts "Placement image: $PNR_DIR/${DESIGN}_placement.png"
 
-  foreach layer {metal2 metal3 metal4 metal5 metal6 metal7 via1 via2 via3 via4 via5 via6} {
+  foreach layer $viz_layers {
     gui::set_display_controls $layer visible true
   }
   gui::set_display_controls "Instances/StdCells" visible false
