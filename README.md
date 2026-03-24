@@ -125,7 +125,7 @@ make flow-gds
 | `MAX_ROUTING_LAYER` | metal7              | M7              | Top routing layer        |
 | `DR_THREADS`        | 0 (auto)            | 0 (auto)        | Detailed routing threads |
 
-**PnR Output Files** (in `result/<DESIGN>-<FREQ>MHz-pnr/`):
+**PnR Output Files** (in `result/<PLATFORM>-<DESIGN>-<FREQ>MHz-pnr/`):
 
 | File                   | Description               |
 | ---------------------- | ------------------------- |
@@ -153,7 +153,7 @@ make gui                # OpenROAD GUI
 make gui-klayout        # KLayout GUI
 ```
 
-**Layout Images** (in `result/<DESIGN>-<FREQ>MHz-pnr/images/`):
+**Layout Images** (in `result/<PLATFORM>-<DESIGN>-<FREQ>MHz-pnr/images/`):
 
 | Image                        | Description                              |
 | ---------------------------- | ---------------------------------------- |

@@ -66,7 +66,7 @@ if {[info exists env(PLATFORM)]} {
   set PLATFORM $::env(PLATFORM)
 }
 set PLATFORM_DIR $PROJ_PATH/platforms/$PLATFORM
-set LIB_DIR $PROJ_PATH/lib/$PLATFORM
+set LIB_DIR $PROJ_PATH/third_party/lib/$PLATFORM
 
 # Source platform-specific configuration
 source $PLATFORM_DIR/config.tcl
@@ -87,7 +87,9 @@ file mkdir $PNR_DIR
 puts "\n>>> Reading LEF / Liberty / Verilog ..."
 read_lef $TECH_LEF
 read_lef $SC_LEF
-read_liberty $LIB_FILE
+foreach lib $LIB_FILES {
+  read_liberty $lib
+}
 read_verilog $NETLIST_FILE
 link_design $DESIGN
 
@@ -97,6 +99,7 @@ if {[file exists $SDC_FILE]} {
   puts "Read SDC: $SDC_FILE"
 } else {
   puts "Warning: SDC not found ($SDC_FILE), creating inline constraints"
+  if {![info exists TIME_SCALE]} { set TIME_SCALE 1000.0 }
   set CLK_FREQ_MHZ 50
   if {[info exists env(CLK_FREQ_MHZ)]} {
     set CLK_FREQ_MHZ $::env(CLK_FREQ_MHZ)
@@ -106,7 +109,7 @@ if {[file exists $SDC_FILE]} {
     set clk_port_name $::env(CLK_PORT_NAME)
   }
   create_clock -name core_clock \
-    -period [expr {1000.0 / $CLK_FREQ_MHZ}] \
+    -period [expr {$TIME_SCALE / $CLK_FREQ_MHZ}] \
     [get_ports $clk_port_name]
 }
 
@@ -120,13 +123,41 @@ initialize_floorplan \
   -core_space 2 \
   -site $PLACE_SITE
 
-make_tracks
+platform_make_tracks
 
 # Set layer RC for parasitics estimation
 source $SET_RC_TCL
 
+# Apply IO pin constraints (if provided)
+set PIN_CONSTRAINT_FILE ""
+if {[info exists env(PIN_CONSTRAINT_FILE)] && $::env(PIN_CONSTRAINT_FILE) ne ""} {
+  set PIN_CONSTRAINT_FILE $PROJ_PATH/$::env(PIN_CONSTRAINT_FILE)
+  if {[file exists $PIN_CONSTRAINT_FILE]} {
+    puts "Sourcing pin constraints: $PIN_CONSTRAINT_FILE"
+    source $PIN_CONSTRAINT_FILE
+  } else {
+    puts "Warning: PIN_CONSTRAINT_FILE not found: $PIN_CONSTRAINT_FILE"
+  }
+}
+
 # Place IO pins
 place_pins -hor_layers $PIN_HOR_LAYER -ver_layers $PIN_VER_LAYER
+
+# Repair high-fanout tie cells
+puts "Repair tie lo fanout..."
+set tielo_cell_name [lindex $TIELO_CELL_AND_PORT 0]
+if {[info exists TIELO_CELL_AND_PORT] && $tielo_cell_name ne ""} {
+  set tielo_lib_name [get_name [get_property [lindex [get_lib_cell $tielo_cell_name] 0] library]]
+  set tielo_pin $tielo_lib_name/$tielo_cell_name/[lindex $TIELO_CELL_AND_PORT 1]
+  repair_tie_fanout $tielo_pin
+}
+puts "Repair tie hi fanout..."
+set tiehi_cell_name [lindex $TIEHI_CELL_AND_PORT 0]
+if {[info exists TIEHI_CELL_AND_PORT] && $tiehi_cell_name ne ""} {
+  set tiehi_lib_name [get_name [get_property [lindex [get_lib_cell $tiehi_cell_name] 0] library]]
+  set tiehi_pin $tiehi_lib_name/$tiehi_cell_name/[lindex $TIEHI_CELL_AND_PORT 1]
+  repair_tie_fanout $tiehi_pin
+}
 
 # Tap cells
 platform_tapcell
@@ -183,6 +214,15 @@ repair_clock_nets
 detailed_placement
 
 estimate_parasitics -placement
+
+# Post-CTS timing repair (setup and hold)
+puts "\n>>> Post-CTS repair timing ..."
+repair_timing -setup
+repair_timing -hold
+detailed_placement
+check_placement -verbose
+
+estimate_parasitics -placement
 puts "\n--- Post-CTS Reports ---"
 report_checks -path_delay min_max -format full_clock_expanded -digits 3
 report_clock_skew
@@ -196,17 +236,14 @@ puts "CTS DEF written: $PNR_DIR/${DESIGN}_cts.def"
 puts "\n>>> Global routing ..."
 platform_routing_setup
 
-# FAST: reduced congestion iterations (15 → 5)
-global_route \
+# FAST: reduced congestion iterations (15 → 5)\nglobal_route \
   -guide_file $PNR_DIR/${DESIGN}.route.guide \
-  -congestion_iterations 5 \
-  -allow_congestion
+  -congestion_iterations 5
 
+set_propagated_clock [all_clocks]
 estimate_parasitics -global_routing
 
-# FAST: skip post-GRT repair_design — timing has >7ns slack at 50MHz
-# repair_design
-# detailed_placement
+# FAST: skip post-GRT incremental repair cycle for speed
 
 write_def $PNR_DIR/${DESIGN}_grouted.def
 puts "Global-routed DEF written: $PNR_DIR/${DESIGN}_grouted.def"

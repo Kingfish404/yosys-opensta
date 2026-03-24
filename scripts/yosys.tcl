@@ -11,23 +11,40 @@ puts "VERILOG_FILES: $VERILOG_FILES"
 puts "VERILOG_INCLUDE_DIRS: $VERILOG_INCLUDE_DIRS"
 puts "NETLIST_SYN_V: $NETLIST_SYN_V"
 
-set FOUNDARY_PATH           "[file dirname [info script]]/../lib/nangate45"
+set FOUNDRY_PATH           "[file dirname [info script]]/../third_party/lib/nangate45"
 set PLATFORM_CONFIG_DIR     "[file dirname [info script]]/../platforms/nangate45"
 if {[info exists env(PLATFORM)]} {
-  set FOUNDARY_PATH         "[file dirname [info script]]/../lib/$::env(PLATFORM)"
+  set FOUNDRY_PATH         "[file dirname [info script]]/../third_party/lib/$::env(PLATFORM)"
   set PLATFORM_CONFIG_DIR   "[file dirname [info script]]/../platforms/$::env(PLATFORM)"
 }
 
 # Source platform-specific synthesis configuration
 source "$PLATFORM_CONFIG_DIR/yosys_config.tcl"
 
-set CLK_FREQ_MHZ            500
+# Build liberty args list from LIB_FILES (set by yosys_config.tcl)
+if {![info exists LIB_FILES]} {
+    set LIB_FILES [list $MERGED_LIB_FILE]
+}
+set liberty_args {}
+foreach lib $LIB_FILES {
+    lappend liberty_args -liberty $lib
+}
+
+set CLK_FREQ_MHZ            50
 if {[info exists env(CLK_FREQ_MHZ)]} {
   set CLK_FREQ_MHZ          $::env(CLK_FREQ_MHZ)
 } else {
   puts "Warning: Environment CLK_FREQ_MHZ is not defined. Use $CLK_FREQ_MHZ MHz by default."
 }
 set CLK_PERIOD_NS           [expr 1000.0 / $CLK_FREQ_MHZ]
+
+# Build dont_use args for dfflibmap/abc (from DONT_USE_CELLS if set by yosys_config.tcl)
+set dont_use_args {}
+if {[info exists DONT_USE_CELLS]} {
+    foreach cell $DONT_USE_CELLS {
+        lappend dont_use_args -dont_use $cell
+    }
+}
 
 # TIEHI/TIELO/BUF cells are set by yosys_config.tcl above
 
@@ -92,32 +109,39 @@ synth  -top $DESIGN
 # Optimize the design
 opt -purge
 
+# Technology mapping of adders (if platform provides an adder map file)
+if {[info exist ADDER_MAP_FILE] && $ADDER_MAP_FILE ne ""} {
+  extract_fa
+  techmap -map $ADDER_MAP_FILE
+  techmap
+  opt -fast -purge
+}
+
 # technology mapping of latches
 if {[info exist LATCH_MAP_FILE] && $LATCH_MAP_FILE ne ""} {
   techmap -map $LATCH_MAP_FILE
 }
 
 # technology mapping of flip-flops
-dfflibmap -liberty $MERGED_LIB_FILE
+dfflibmap {*}$liberty_args {*}$dont_use_args
 opt -undriven
 
 # Technology mapping for cells
 abc -D [expr $CLK_PERIOD_NS * 1000] \
-    -liberty $MERGED_LIB_FILE \
+    {*}$liberty_args \
     -showtmp \
     -script $abc_script
-
-
-# technology mapping of constant hi- and/or lo-drivers
-hilomap -singleton \
-        -hicell {*}$TIEHI_CELL_AND_PORT \
-        -locell {*}$TIELO_CELL_AND_PORT
 
 # replace undef values with defined constants
 setundef -zero
 
 # Splitting nets resolves unwanted compound assign statements in netlist (assign {..} = {..}
 splitnets
+
+# technology mapping of constant hi- and/or lo-drivers
+hilomap -singleton \
+        -hicell {*}$TIEHI_CELL_AND_PORT \
+        -locell {*}$TIELO_CELL_AND_PORT
 
 # insert buffer cells for pass through wires
 insbuf -buf {*}$MIN_BUF_CELL_AND_PORTS
@@ -130,8 +154,11 @@ write_json $RESULT_DIR/${DESIGN}_syn.json
 
 # reports
 tee -o $RESULT_DIR/synth_check.txt check
-tee -o $RESULT_DIR/input.json stat -liberty $MERGED_LIB_FILE -json
-tee -o $RESULT_DIR/synth_stat.txt stat -liberty $MERGED_LIB_FILE
+tee -o $RESULT_DIR/input.json stat {*}$liberty_args -json
+tee -o $RESULT_DIR/synth_stat.txt stat {*}$liberty_args
+
+# Verify all cells are mapped to target library (report only, don't abort on warnings)
+check -mapped
 
 # write synthesized design
 write_verilog -noattr -noexpr -nohex -nodec $NETLIST_SYN_V

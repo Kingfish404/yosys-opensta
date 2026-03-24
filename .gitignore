@@ -1,13 +1,11 @@
-OpenSTA/
-OpenROAD/
 yosys-slang/
-lib/
+/third_party
 tmp/
 result/
 *.log
-
-cudd-*
 *.tar.bz2
 __pycache__
 
 .DS_Store
+
+*.bak

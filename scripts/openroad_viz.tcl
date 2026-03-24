@@ -25,7 +25,7 @@ if {[info exists env(PLATFORM)]} {
   set PLATFORM $::env(PLATFORM)
 }
 set PLATFORM_DIR $PROJ_PATH/platforms/$PLATFORM
-set LIB_DIR $PROJ_PATH/lib/$PLATFORM
+set LIB_DIR $PROJ_PATH/third_party/lib/$PLATFORM
 
 # Source platform-specific configuration
 source $PLATFORM_DIR/config.tcl
