@@ -373,6 +373,24 @@ viz-arch-dot: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Architecture diagram (dot/svg)
 	python3 $(SCRIPT_DIR)/gen-dot.py -f $(DOT_FORMAT) $(RESULT_DIR)/$(DESIGN)_arch.dot
 	@echo "=== Diagrams generated in $(RESULT_DIR)/ ==="
 
+viz-png: $(PNR_RESULT_DIR)/$(DESIGN)_final.odb ## Export ODB layout as PNG
+	@echo "=== Exporting layout PNG via OpenROAD ==="
+	ODB=$(PNR_RESULT_DIR)/$(DESIGN)_final.odb \
+	xvfb-run -a $(OPENROAD_BIN) -gui -exit \
+		$(SCRIPT_DIR)/export_odb_webp.tcl
+	@echo "=== Saved: $(PNR_RESULT_DIR)/$(DESIGN)_final.png ==="
+
+viz-label: $(PNR_RESULT_DIR)/$(DESIGN)_final.png ## Labeled module overlay on layout PNG
+	@echo "=== Generating labeled module layout ==="
+	python3 $(SCRIPT_DIR)/viz_label_modules.py \
+		--syn-json  $(RESULT_DIR)/$(DESIGN)_syn.json \
+		--hier-json $(RESULT_DIR)/$(DESIGN)_hier.json \
+		--netlist-v $(RESULT_DIR)/$(DESIGN).netlist.syn.v \
+		--def-file  $(PNR_RESULT_DIR)/$(DESIGN)_final.def \
+		--base-png  $(PNR_RESULT_DIR)/$(DESIGN)_final.png \
+		-o          $(PNR_RESULT_DIR)/$(DESIGN)_final.label.png
+	@echo "=== Saved: $(PNR_RESULT_DIR)/$(DESIGN)_final.label.png ==="
+
 # =====================================================================
 #  Interactive GUI
 # =====================================================================
@@ -407,6 +425,6 @@ clean-pnr: ## Remove PnR results only
         syn sta sta-detail sta-docker sta-detail-docker show show-raw summary summary-json \
         pnr pnr-fast pnr-docker pnr-fast-docker gds \
         flow flow-gds \
-        viz viz-openroad viz-openroad-docker viz-klayout viz-timing viz-arch-dot \
+        viz viz-openroad viz-openroad-docker viz-klayout viz-timing viz-arch-dot viz-png viz-label \
         gui gui-klayout \
         clean clean-pnr
