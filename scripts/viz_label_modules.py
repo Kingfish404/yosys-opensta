@@ -548,9 +548,9 @@ def render_labeled_image(base_png, bboxes, dbu, die, out_path, min_count=50,
     1. Accumulate per-module cell counts on a fine grid
     2. Gaussian-blur each module's density layer for spatial coherence
     3. Assign each grid cell to the module with highest smoothed density
-    4. Render colored regions with morphological contour extraction
+    4. Render colored regions via RGBA overlays (vectorized imshow)
     """
-    from scipy.ndimage import gaussian_filter, label as ndlabel
+    from scipy.ndimage import gaussian_filter, binary_erosion, binary_dilation
 
     img = mpimg.imread(base_png)
     img_h, img_w = img.shape[:2]
@@ -616,21 +616,17 @@ def render_labeled_image(base_png, bboxes, dbu, die, out_path, min_count=50,
         presence_mask = presence_smooth > (presence_smooth.max() * 0.15)
         # Erode the presence mask to pull label regions away from the edge of
         # the placement core (prevents bleeding into power ring / IO area).
-        from scipy.ndimage import binary_erosion
         presence_mask = binary_erosion(presence_mask, iterations=2)
 
         # Core-area mask: if ROW definitions gave us a core boundary, clip the
         # label overlay strictly to the placement core region.
         if core is not None:
             core_x0, core_y0, core_x1, core_y1 = core
-            core_mask = np.zeros((grid_n, grid_n), dtype=bool)
-            for gy in range(grid_n):
-                for gx in range(grid_n):
-                    # Grid cell center in DEF coordinates
-                    cx = die_x0 + (gx + 0.5) / grid_n * die_w
-                    cy = die_y0 + (gy + 0.5) / grid_n * die_h
-                    if core_x0 <= cx <= core_x1 and core_y0 <= cy <= core_y1:
-                        core_mask[gy, gx] = True
+            gx_centers = die_x0 + (np.arange(grid_n) + 0.5) / grid_n * die_w
+            gy_centers = die_y0 + (np.arange(grid_n) + 0.5) / grid_n * die_h
+            gx_grid, gy_grid = np.meshgrid(gx_centers, gy_centers)
+            core_mask = ((gx_grid >= core_x0) & (gx_grid <= core_x1) &
+                         (gy_grid >= core_y0) & (gy_grid <= core_y1))
             presence_mask = presence_mask & core_mask
 
         # Dominant module per grid cell from smoothed densities
@@ -643,95 +639,73 @@ def render_labeled_image(base_png, bboxes, dbu, die, out_path, min_count=50,
         cell_w = img_w / grid_n
         cell_h = img_h / grid_n
 
-        # --- Draw filled regions ---
-        for gy in range(grid_n):
-            for gx in range(grid_n):
-                if not mask_active[gy, gx]:
-                    continue
-                mi = dominant[gy, gx]
-                strength = dominant_strength[gy, gx]
-                total_s = total_smooth[gy, gx]
-                if total_s < 1e-8:
-                    continue
-                ratio = strength / total_s
-                if ratio < 0.25:
-                    continue
-                color = mod_color[mod_names[mi]]
-                alpha = min(0.50, 0.12 + 0.38 * ratio)
-                rect = mpatches.Rectangle(
-                    (gx * cell_w, gy * cell_h), cell_w, cell_h,
-                    facecolor=color, edgecolor="none", alpha=alpha, zorder=2,
-                )
-                ax.add_patch(rect)
+        # Pre-compute per-cell dominance ratio
+        total_safe = np.maximum(total_smooth, 1e-8)
+        ratio = dominant_strength / total_safe
 
-        # --- Draw contour borders per module ---
-        def _binary_dilate(arr, iterations=1):
-            out = arr.copy()
-            for _ in range(iterations):
-                padded = np.pad(out, 1, mode='constant')
-                out = (padded[1:-1, 1:-1] | padded[:-2, 1:-1] | padded[2:, 1:-1] |
-                       padded[1:-1, :-2] | padded[1:-1, 2:]).astype(np.uint8)
-            return out
+        def hex2rgb(h):
+            """Convert hex color to RGB floats."""
+            h = h.lstrip('#')
+            return [int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4)]
 
-        def _binary_erode(arr, iterations=1):
-            out = arr.copy()
-            for _ in range(iterations):
-                padded = np.pad(out, 1, mode='constant')
-                out = (padded[1:-1, 1:-1] & padded[:-2, 1:-1] & padded[2:, 1:-1] &
-                       padded[1:-1, :-2] & padded[1:-1, 2:]).astype(np.uint8)
-            return out
-
+        # --- Draw filled regions via RGBA overlay (vectorized) ---
+        overlay = np.zeros((grid_n, grid_n, 4), dtype=np.float32)
         for mi, mod in enumerate(mod_names):
-            # Region where this module dominates with decent strength
-            mod_mask = np.zeros((grid_n, grid_n), dtype=np.uint8)
-            for gy in range(grid_n):
-                for gx in range(grid_n):
-                    if not mask_active[gy, gx]:
-                        continue
-                    total_s = total_smooth[gy, gx]
-                    if total_s < 1e-8:
-                        continue
-                    if dominant[gy, gx] == mi and smoothed[gy, gx, mi] / total_s >= 0.3:
-                        mod_mask[gy, gx] = 1
+            mod_region = mask_active & (dominant == mi) & (ratio >= 0.25)
+            if not mod_region.any():
+                continue
+            rgb = hex2rgb(mod_color[mod])
+            alpha = np.where(mod_region, np.minimum(0.50, 0.12 + 0.38 * ratio), 0)
+            for c in range(3):
+                overlay[:, :, c] = np.where(mod_region,
+                    overlay[:, :, c] * (1 - alpha) + rgb[c] * alpha,
+                    overlay[:, :, c])
+            overlay[:, :, 3] = np.where(mod_region,
+                1 - (1 - overlay[:, :, 3]) * (1 - alpha),
+                overlay[:, :, 3])
+
+        ax.imshow(overlay, extent=[0, img_w, 0, img_h],
+                  interpolation='nearest', origin='lower', zorder=2)
+
+        # --- Draw contour borders via RGBA overlay (vectorized) ---
+        border_overlay = np.zeros((grid_n, grid_n, 4), dtype=np.float32)
+        for mi, mod in enumerate(mod_names):
+            mod_mask = (mask_active & (dominant == mi) &
+                        (smoothed[:, :, mi] / total_safe >= 0.3))
             if mod_mask.sum() < 4:
                 continue
             # Morphological close then open to smooth boundaries
-            mod_mask = _binary_dilate(mod_mask, iterations=2)
-            mod_mask = _binary_erode(mod_mask, iterations=2)
-            mod_mask = _binary_erode(mod_mask, iterations=1)
-            mod_mask = _binary_dilate(mod_mask, iterations=1)
-            # Clip to cell-presence area to prevent bleeding into empty die regions
-            mod_mask = mod_mask & presence_mask.astype(np.uint8)
-            # Extract border
-            interior = _binary_erode(mod_mask, iterations=1)
-            border = ((mod_mask.astype(np.int8) - interior.astype(np.int8)) > 0).astype(np.uint8)
-            color = mod_color[mod]
-            for gy in range(grid_n):
-                for gx in range(grid_n):
-                    if border[gy, gx]:
-                        rect = mpatches.Rectangle(
-                            (gx * cell_w, gy * cell_h), cell_w, cell_h,
-                            facecolor=color, edgecolor=color,
-                            alpha=0.75, linewidth=0.3, zorder=3,
-                        )
-                        ax.add_patch(rect)
+            mod_mask = binary_dilation(mod_mask, iterations=2)
+            mod_mask = binary_erosion(mod_mask, iterations=3)
+            mod_mask = binary_dilation(mod_mask, iterations=1)
+            # Clip to cell-presence area
+            mod_mask = mod_mask & presence_mask
+            interior = binary_erosion(mod_mask, iterations=1)
+            border = mod_mask & ~interior
+            if not border.any():
+                continue
+            rgb = hex2rgb(mod_color[mod])
+            a = 0.75
+            for c in range(3):
+                border_overlay[:, :, c] = np.where(border,
+                    border_overlay[:, :, c] * (1 - a) + rgb[c] * a,
+                    border_overlay[:, :, c])
+            border_overlay[:, :, 3] = np.where(border,
+                1 - (1 - border_overlay[:, :, 3]) * (1 - a),
+                border_overlay[:, :, 3])
+
+        ax.imshow(border_overlay, extent=[0, img_w, 0, img_h],
+                  interpolation='nearest', origin='lower', zorder=3)
 
     # --- Compute weighted centroid per module for label placement ---
-    # Use smoothed density peak instead of raw centroid for better positioning
     centroids = {}
-    if cell_modules is not None and vlog_instances is not None and positions is not None:
+    if cell_modules is not None and vlog_instances is not None and positions is not None and mod_names:
+        gy_coords, gx_coords = np.mgrid[0:grid_n, 0:grid_n]
         for mi, mod in enumerate(mod_names):
-            # Find grid cell with highest smoothed density for this module
             mod_density = smoothed[:, :, mi].copy()
-            # Mask out where this module doesn't dominate
-            for gy in range(grid_n):
-                for gx in range(grid_n):
-                    if not mask_active[gy, gx] or dominant[gy, gx] != mi:
-                        mod_density[gy, gx] = 0
+            mod_density[~(mask_active & (dominant == mi))] = 0
             if mod_density.max() < 1e-8:
                 continue
-            # Weighted centroid from smoothed density
-            gy_coords, gx_coords = np.mgrid[0:grid_n, 0:grid_n]
             total_d = mod_density.sum()
             if total_d < 1e-8:
                 continue
@@ -774,7 +748,7 @@ def render_labeled_image(base_png, bboxes, dbu, die, out_path, min_count=50,
             ),
         )
 
-    plt.savefig(out_path, dpi=100, bbox_inches="tight", pad_inches=0)
+    plt.savefig(out_path, dpi=100, pad_inches=0)
     plt.close()
     print(f"Saved: {out_path}")
 

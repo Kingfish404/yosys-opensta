@@ -17,9 +17,14 @@ make flow-serv
 
 # Use ASAP7 platform
 make sta-hazard3 PLATFORM=asap7
+
+# Hierarchical synthesis
+make sta-hazard3 SYNTH_HIERARCHICAL=1
+
+# Custom clock frequency
+make flow-picorv32 CLK_FREQ_MHZ=100
 ```
 
 ## Benchmark Pre-Generated Results
 
 See the [results](results) directory.
-

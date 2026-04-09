@@ -67,14 +67,14 @@ make flow PLATFORM=asap7        # Run full flow with ASAP7
 ```
 
 > **Directory layout**: Platform build configs live in `platforms/<platform>/` (tracked in git).
-> Downloaded PDK data lives in `lib/<platform>/` (gitignored).
+> Downloaded PDK data lives in `third_party/lib/<platform>/` (gitignored).
 
 ## Usage
 
 ### Synthesis & Timing Analysis
 
 ```shell
-# Synthesis + STA with default example (gcd.v @ 50MHz)
+# Synthesis + STA with default example (op.v @ 50MHz)
 make syn                # synthesis only
 make sta                # STA (requires syn)
 make sta-detail         # detailed timing report
@@ -90,10 +90,23 @@ make sta DESIGN=my_core \
 # SystemVerilog is supported via yosys-slang
 make sta DESIGN=my_core RTL_FILES="/path/to/top.sv"
 
+# Hierarchical synthesis (preserve sub-module boundaries)
+make syn SYNTH_HIERARCHICAL=1
+
+# Custom ABC optimization script
+make syn ABC_SCRIPT="+strash;dch;map;topo;dnsize;buffer;upsize;"
+
 # Architecture diagrams
 make viz-arch-dot                # generate dot → svg
 make viz-arch-dot DOT_FORMAT=png
 ```
+
+**Synthesis Parameters:**
+
+| Parameter            | Default | Description                                           |
+| -------------------- | ------- | ----------------------------------------------------- |
+| `SYNTH_HIERARCHICAL` | 0       | Hierarchical synthesis (0=flat, 1=preserve hierarchy) |
+| `ABC_SCRIPT`         | (empty) | ABC optimization script override (empty=default)      |
 
 > **Hint**: Remove `DPI-C` and `$` macro code from SystemVerilog files before synthesis.
 
@@ -112,30 +125,49 @@ make pnr CORE_UTILIZATION=50 PLACE_DENSITY=0.70
 
 # Full RTL-to-GDS
 make flow-gds
+
+# Resume PnR from a specific stage (uses ODB checkpoints)
+make pnr-from-place     # re-run from placement onwards
+make pnr-from-cts       # re-run from CTS onwards
+make pnr-from-route     # re-run from routing onwards
+make pnr-from-finish    # re-run finish stage only (reports + outputs)
+
+# Or use PNR_RESUME_FROM with any PnR target
+make pnr PNR_RESUME_FROM=cts
 ```
 
 **PnR Parameters:**
 
-| Parameter           | Default (nangate45) | Default (asap7) | Description              |
-| ------------------- | ------------------- | --------------- | ------------------------ |
-| `CORE_UTILIZATION`  | 40                  | 40              | Core area utilization (%) |
-| `CORE_ASPECT_RATIO` | 1.0                 | 1.0             | Floorplan aspect ratio   |
-| `PLACE_DENSITY`     | 0.60                | 0.60            | Global placement density |
-| `MIN_ROUTING_LAYER` | metal2              | M2              | Bottom routing layer     |
-| `MAX_ROUTING_LAYER` | metal7              | M7              | Top routing layer        |
-| `DR_THREADS`        | 0 (auto)            | 0 (auto)        | Detailed routing threads |
+| Parameter             | Default (nangate45) | Default (asap7) | Description                                         |
+| --------------------- | ------------------- | --------------- | --------------------------------------------------- |
+| `CORE_UTILIZATION`    | 40                  | 40              | Core area utilization (%)                           |
+| `CORE_ASPECT_RATIO`   | 1.0                 | 1.0             | Floorplan aspect ratio                              |
+| `PLACE_DENSITY`       | 0.60                | 0.60            | Global placement density                            |
+| `MIN_ROUTING_LAYER`   | metal2              | M2              | Bottom routing layer                                |
+| `MAX_ROUTING_LAYER`   | metal10             | M7              | Top routing layer                                   |
+| `DR_THREADS`          | 0 (auto)            | 0 (auto)        | Detailed routing threads                            |
+| `PIN_CONSTRAINT_FILE` | (empty)             | (empty)         | Pin constraint TCL file (optional)                  |
+| `PNR_RESUME_FROM`     | (empty)             | (empty)         | Resume from stage: floorplan/place/cts/route/finish |
 
 **PnR Output Files** (in `result/<PLATFORM>-<DESIGN>-<FREQ>MHz-pnr/`):
 
-| File                   | Description               |
-| ---------------------- | ------------------------- |
-| `<DESIGN>_final.def`   | Final layout (DEF format) |
-| `<DESIGN>_final.odb`   | OpenROAD database         |
-| `<DESIGN>_final.v`     | Post-layout netlist       |
-| `timing_max_final.rpt` | Setup timing report       |
-| `timing_min_final.rpt` | Hold timing report        |
-| `power_final.rpt`      | Power report              |
-| `clock_skew_final.rpt` | Clock tree skew           |
+| File                   | Description                         |
+| ---------------------- | ----------------------------------- |
+| `<DESIGN>_final.def`   | Final layout (DEF format)           |
+| `<DESIGN>_final.odb`   | OpenROAD database                   |
+| `<DESIGN>_final.v`     | Post-layout netlist                 |
+| `<DESIGN>_final.spef`  | Extracted parasitics (if RCX rules) |
+| `timing_max_final.rpt` | Setup timing report                 |
+| `timing_min_final.rpt` | Hold timing report                  |
+| `timing_violators.rpt` | All timing violators                |
+| `power_final.rpt`      | Power report                        |
+| `area_final.rpt`       | Design area report                  |
+| `clock_skew_final.rpt` | Clock tree skew                     |
+| `antenna_final.rpt`    | Antenna check report                |
+| `1_floorplan.odb`      | Stage checkpoint (for resume)       |
+| `2_place.odb`          | Stage checkpoint (for resume)       |
+| `3_cts.odb`            | Stage checkpoint (for resume)       |
+| `4_route.odb`          | Stage checkpoint (for resume)       |
 
 ### Visualization
 
@@ -155,14 +187,14 @@ make gui-klayout        # KLayout GUI
 
 **Layout Images** (in `result/<PLATFORM>-<DESIGN>-<FREQ>MHz-pnr/images/`):
 
-| Image                        | Description                              |
-| ---------------------------- | ---------------------------------------- |
-| `<DESIGN>_chip_full.png`     | Complete chip layout (all layers)        |
-| `<DESIGN>_chip_placement.png`| Cell placement view                      |
-| `<DESIGN>_chip_routing.png`  | Routing layers only                      |
-| `<DESIGN>_chip_power.png`    | Power distribution network               |
-| `<DESIGN>_chip_clock.png`    | Clock tree network                       |
-| `<DESIGN>_<stage>_full.png`  | Per-stage snapshots (floorplan → final)  |
+| Image                         | Description                             |
+| ----------------------------- | --------------------------------------- |
+| `<DESIGN>_chip_full.png`      | Complete chip layout (all layers)       |
+| `<DESIGN>_chip_placement.png` | Cell placement view                     |
+| `<DESIGN>_chip_routing.png`   | Routing layers only                     |
+| `<DESIGN>_chip_power.png`     | Power distribution network              |
+| `<DESIGN>_chip_clock.png`     | Clock tree network                      |
+| `<DESIGN>_<stage>_full.png`   | Per-stage snapshots (floorplan → final) |
 
 ### Docker Variants
 
@@ -182,6 +214,55 @@ make viz-openroad-docker
 make clean              # Remove all results
 make clean-pnr          # Remove PnR results only (keep synthesis/STA)
 ```
+
+### Testing
+
+Smoke tests verify that the full flow works correctly.
+
+```shell
+make test               # Run all tests (syn + STA + PnR + viz)
+make test-syn           # Synthesis tests only
+make test-sta           # STA tests only
+make test-pnr           # PnR tests only
+make test-viz           # Visualization tests only
+make test-flow          # Full flow end-to-end (syn → sta → pnr)
+make test PLATFORM=asap7  # Test with ASAP7 platform
+```
+
+See the [tests](tests) directory for details.
+
+## Project Structure
+
+```
+scripts/
+├── yosys.tcl               # Yosys synthesis (supports ABC_SCRIPT, SYNTH_HIERARCHICAL)
+├── opensta_common.tcl      # Shared STA setup (env, platform, liberty, SDC)
+├── opensta.tcl             # STA summary + fmax report (sources common)
+├── opensta_detail.tcl      # Detailed timing with source attribution (sources common)
+├── openroad_pnr_common.tcl # Shared PnR flow (stage checkpoints, resume support)
+├── openroad_pnr.tcl        # Standard PnR mode (sources common)
+├── openroad_pnr_fast.tcl   # Fast PnR mode (sources common)
+├── ppa_summary.py          # PPA report generator
+└── ...                     # Visualization and utility scripts
+platforms/
+├── nangate45/              # NanGate FreePDK45 (45nm)
+│   ├── config.tcl          # OpenROAD/OpenSTA platform config
+│   ├── yosys_config.tcl    # Yosys synthesis config
+│   ├── platform.mk         # Makefile variables
+│   └── setRC.tcl           # RC extraction values
+└── asap7/                  # ASAP7 7nm FinFET
+    ├── config.tcl
+    ├── yosys_config.tcl
+    ├── platform.mk
+    └── setRC.tcl
+tests/
+├── Makefile                # Test runner
+├── README.md               # Test documentation
+└── designs/
+    └── counter.v           # Minimal test design (8-bit counter)
+```
+
+The PnR scripts use a **common + wrapper** pattern: `openroad_pnr.tcl` and `openroad_pnr_fast.tcl` are thin wrappers that set mode-specific defaults and `source` the shared `openroad_pnr_common.tcl`. Similarly, `opensta.tcl` and `opensta_detail.tcl` share setup logic via `opensta_common.tcl`.
 
 ## Benchmark
 

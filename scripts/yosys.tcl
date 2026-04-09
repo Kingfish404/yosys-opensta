@@ -56,7 +56,12 @@ yosys -import
 # Don't change these unless you know what you are doing
 set stat_ext    "_stat.rep"
 set gl_ext      "_gl.v"
-set abc_script  "+strash;ifraig;retime,-D,{D},-M,6;strash;dch,-f;map,-p,-M,1,{D},-f;topo;dnsize;buffer,-p;upsize;"
+# ABC script: override via ABC_SCRIPT env var for area- vs timing-focused optimization
+if {[info exists env(ABC_SCRIPT)] && $::env(ABC_SCRIPT) ne ""} {
+  set abc_script $::env(ABC_SCRIPT)
+} else {
+  set abc_script  "+strash;ifraig;retime,-D,{D},-M,6;strash;dch,-f;map,-p,-M,1,{D},-f;topo;dnsize;buffer,-p;upsize;"
+}
 
 # Setup verilog include directories
 set vIdirsArgs ""
@@ -104,7 +109,17 @@ if {[info exist BLACKBOX_MAP_TCL] && $BLACKBOX_MAP_TCL ne ""} {
 write_json $RESULT_DIR/${DESIGN}_hier.json
 
 # generic synthesis
-synth  -top $DESIGN
+# SYNTH_HIERARCHICAL: 0 = flat (default), 1 = preserve sub-module hierarchy
+set synth_hierarchical 0
+if {[info exists env(SYNTH_HIERARCHICAL)] && $::env(SYNTH_HIERARCHICAL) ne "0"} {
+  set synth_hierarchical 1
+}
+if {$synth_hierarchical} {
+  puts ">>> Hierarchical synthesis (preserving sub-module boundaries)"
+  synth -top $DESIGN -noflatten
+} else {
+  synth -top $DESIGN
+}
 
 # Optimize the design
 opt -purge

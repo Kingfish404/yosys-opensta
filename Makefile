@@ -24,6 +24,8 @@ RTL_FILES ?= $(shell find $(PROJ_PATH)/example -name "*.v")## RTL source files
 CLK_PORT_NAME ?= clock## Clock port name in the design
 CLK_FREQ_MHZ ?= 50## Target clock frequency (MHz)
 VERILOG_INCLUDE_DIRS ?= $(PROJ_PATH)/example## Verilog include search paths
+ABC_SCRIPT ?=## ABC optimization script override (empty=default)
+SYNTH_HIERARCHICAL ?= 0## Hierarchical synthesis (0=flat, 1=preserve hierarchy)
 
 # =====================================================================
 #  PnR Parameters
@@ -33,6 +35,7 @@ CORE_ASPECT_RATIO ?= 1.0## Core aspect ratio (W/H)
 PLACE_DENSITY ?= 0.60## Placement density (0.0-1.0)
 DR_THREADS ?= 0## Detailed routing threads (0=auto)
 PIN_CONSTRAINT_FILE ?=## Pin constraint TCL file (optional)
+PNR_RESUME_FROM ?=## Resume PnR from stage (floorplan|place|cts|route|finish)
 
 # =====================================================================
 #  Derived Paths (do not edit)
@@ -76,7 +79,8 @@ PNR_ENV = \
   PLACE_DENSITY=$(PLACE_DENSITY) \
   MIN_ROUTING_LAYER=$(MIN_ROUTING_LAYER) \
   MAX_ROUTING_LAYER=$(MAX_ROUTING_LAYER) \
-  PIN_CONSTRAINT_FILE=$(PIN_CONSTRAINT_FILE)
+  PIN_CONSTRAINT_FILE=$(PIN_CONSTRAINT_FILE) \
+  PNR_RESUME_FROM=$(PNR_RESUME_FROM)
 
 PNR_DOCKER_ENV = \
   -e PNR_RESULT_DIR=result/$(PLATFORM)-$(DESIGN)-$(CLK_FREQ_MHZ)MHz-pnr \
@@ -85,7 +89,8 @@ PNR_DOCKER_ENV = \
   -e PLACE_DENSITY=$(PLACE_DENSITY) \
   -e MIN_ROUTING_LAYER=$(MIN_ROUTING_LAYER) \
   -e MAX_ROUTING_LAYER=$(MAX_ROUTING_LAYER) \
-  -e PIN_CONSTRAINT_FILE=$(PIN_CONSTRAINT_FILE)
+  -e PIN_CONSTRAINT_FILE=$(PIN_CONSTRAINT_FILE) \
+  -e PNR_RESUME_FROM=$(PNR_RESUME_FROM)
 
 # =====================================================================
 #  Default Target — Help
@@ -221,12 +226,14 @@ syn: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Run Yosys synthesis
 
 $(RESULT_DIR)/$(NETLIST_SYN_V): $(RTL_FILES) $(SCRIPT_DIR)/yosys.tcl
 	mkdir -p $(@D)
-	export PLATFORM=$(PLATFORM) && \
+	export PLATFORM=$(PLATFORM) \
+	  ABC_SCRIPT="$(ABC_SCRIPT)" \
+	  SYNTH_HIERARCHICAL=$(SYNTH_HIERARCHICAL) && \
 	echo tcl $(SCRIPT_DIR)/yosys.tcl \
 		$(DESIGN) \
 		\"$(RTL_FILES)\" \
 		\"$(VERILOG_INCLUDE_DIRS)\" \
-		$@ | yosys -m slang -l $(@D)/yosys.log -s - | tee $(@D)/yosys.log
+		$@ | yosys -m slang -s - 2>&1 | tee $(@D)/yosys.log
 
 # =====================================================================
 #  Static Timing Analysis
@@ -267,28 +274,57 @@ pnr: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Run OpenROAD place & route
 	@mkdir -p $(PNR_RESULT_DIR)
 	@test -x "$(OPENROAD_BIN)" || { echo "Error: openroad not found at $(OPENROAD_BIN). Run 'make setup-openroad' or set OPENROAD_BIN."; exit 1; }
 	$(COMMON_ENV) $(PNR_ENV) \
-	$(OPENROAD_BIN) ./scripts/openroad_pnr.tcl \
+	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr.tcl \
 	| tee $(PNR_RESULT_DIR)/pnr.log
 
 pnr-fast: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Fast PnR (fewer iterations, multi-threaded)
 	@mkdir -p $(PNR_RESULT_DIR)
 	@test -x "$(OPENROAD_BIN)" || { echo "Error: openroad not found at $(OPENROAD_BIN). Run 'make setup-openroad' or set OPENROAD_BIN."; exit 1; }
 	$(COMMON_ENV) $(PNR_ENV) DR_THREADS=$(DR_THREADS) \
-	$(OPENROAD_BIN) ./scripts/openroad_pnr_fast.tcl \
+	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr_fast.tcl \
 	| tee $(PNR_RESULT_DIR)/pnr.log
 
 pnr-docker: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Run PnR via Docker
 	@mkdir -p $(PNR_RESULT_DIR)
 	@docker run -i --rm $(DOCKER_ENV) $(PNR_DOCKER_ENV) \
-		-v .:/data openroad /data/scripts/openroad_pnr.tcl \
+		-v .:/data openroad -exit /data/scripts/openroad_pnr.tcl \
 		| tee $(PNR_RESULT_DIR)/pnr.log
 
 pnr-fast-docker: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Fast PnR via Docker
 	@mkdir -p $(PNR_RESULT_DIR)
 	@docker run -i --rm $(DOCKER_ENV) $(PNR_DOCKER_ENV) \
 		-e DR_THREADS=$(DR_THREADS) \
-		-v .:/data openroad /data/scripts/openroad_pnr_fast.tcl \
+		-v .:/data openroad -exit /data/scripts/openroad_pnr_fast.tcl \
 		| tee $(PNR_RESULT_DIR)/pnr.log
+
+# Per-stage PnR targets (resume from a specific stage)
+pnr-from-place: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Resume PnR from placement
+	@mkdir -p $(PNR_RESULT_DIR)
+	@test -x "$(OPENROAD_BIN)" || { echo "Error: openroad not found at $(OPENROAD_BIN). Run 'make setup-openroad' or set OPENROAD_BIN."; exit 1; }
+	$(COMMON_ENV) $(PNR_ENV) PNR_RESUME_FROM=place \
+	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr.tcl \
+	| tee $(PNR_RESULT_DIR)/pnr.log
+
+pnr-from-cts: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Resume PnR from CTS
+	@mkdir -p $(PNR_RESULT_DIR)
+	@test -x "$(OPENROAD_BIN)" || { echo "Error: openroad not found at $(OPENROAD_BIN). Run 'make setup-openroad' or set OPENROAD_BIN."; exit 1; }
+	$(COMMON_ENV) $(PNR_ENV) PNR_RESUME_FROM=cts \
+	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr.tcl \
+	| tee $(PNR_RESULT_DIR)/pnr.log
+
+pnr-from-route: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Resume PnR from routing
+	@mkdir -p $(PNR_RESULT_DIR)
+	@test -x "$(OPENROAD_BIN)" || { echo "Error: openroad not found at $(OPENROAD_BIN). Run 'make setup-openroad' or set OPENROAD_BIN."; exit 1; }
+	$(COMMON_ENV) $(PNR_ENV) PNR_RESUME_FROM=route \
+	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr.tcl \
+	| tee $(PNR_RESULT_DIR)/pnr.log
+
+pnr-from-finish: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Resume PnR from finish (reports only)
+	@mkdir -p $(PNR_RESULT_DIR)
+	@test -x "$(OPENROAD_BIN)" || { echo "Error: openroad not found at $(OPENROAD_BIN). Run 'make setup-openroad' or set OPENROAD_BIN."; exit 1; }
+	$(COMMON_ENV) $(PNR_ENV) PNR_RESUME_FROM=finish \
+	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr.tcl \
+	| tee $(PNR_RESULT_DIR)/pnr.log
 
 # =====================================================================
 #  GDS Generation
@@ -409,6 +445,27 @@ gui-klayout: $(PNR_RESULT_DIR)/$(DESIGN)_final.def ## Open layout in KLayout GUI
 		$(PNR_RESULT_DIR)/$(DESIGN)_final.def
 
 # =====================================================================
+#  Tests
+# =====================================================================
+test: ## Run all smoke tests (syn + sta + pnr + viz)
+	@$(MAKE) -C tests test PLATFORM=$(PLATFORM)
+
+test-syn: ## Run synthesis tests only
+	@$(MAKE) -C tests test-syn PLATFORM=$(PLATFORM)
+
+test-sta: ## Run STA tests only
+	@$(MAKE) -C tests test-sta PLATFORM=$(PLATFORM)
+
+test-pnr: ## Run PnR tests only
+	@$(MAKE) -C tests test-pnr PLATFORM=$(PLATFORM)
+
+test-viz: ## Run visualization tests only
+	@$(MAKE) -C tests test-viz PLATFORM=$(PLATFORM)
+
+test-flow: ## Run full flow end-to-end test
+	@$(MAKE) -C tests test-flow PLATFORM=$(PLATFORM)
+
+# =====================================================================
 #  Clean
 # =====================================================================
 clean: ## Remove all results
@@ -423,8 +480,11 @@ clean-pnr: ## Remove PnR results only
 .PHONY: help \
         setup setup-nangate45 setup-asap7 setup-opensta setup-openroad setup-docker \
         syn sta sta-detail sta-docker sta-detail-docker show show-raw summary summary-json \
-        pnr pnr-fast pnr-docker pnr-fast-docker gds \
+        pnr pnr-fast pnr-docker pnr-fast-docker \
+        pnr-from-place pnr-from-cts pnr-from-route pnr-from-finish \
+        gds \
         flow flow-gds \
         viz viz-openroad viz-openroad-docker viz-klayout viz-timing viz-arch-dot viz-png viz-label \
         gui gui-klayout \
+        test test-syn test-sta test-pnr test-viz test-flow \
         clean clean-pnr
