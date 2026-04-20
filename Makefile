@@ -1,5 +1,7 @@
 PROJ_PATH = $(shell pwd)
 NPROC = $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+MAKE_ENV_CLEAN = env MAKEFLAGS= MFLAGS=
+MAKE_BIN = $(shell command -v make 2>/dev/null || echo make)
 
 # Ensure pipe failures propagate (e.g. cmd | tee returns cmd's exit code)
 SHELL := /bin/bash
@@ -62,16 +64,7 @@ COMMON_ENV = \
   NETLIST_SYN_V=$(NETLIST_SYN_V) \
   PLATFORM=$(PLATFORM)
 
-# Common Docker -e flags
-DOCKER_ENV = \
-  -e DESIGN=$(DESIGN) \
-  -e CLK_PORT_NAME=$(CLK_PORT_NAME) \
-  -e CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) \
-  -e RESULT_DIR=result/$(PLATFORM)-$(DESIGN)-$(CLK_FREQ_MHZ)MHz/ \
-  -e NETLIST_SYN_V=$(NETLIST_SYN_V) \
-  -e PLATFORM=$(PLATFORM)
-
-# PnR-specific environment (extends COMMON_ENV / DOCKER_ENV)
+# PnR-specific environment (extends COMMON_ENV)
 PNR_ENV = \
   PNR_RESULT_DIR=result/$(PLATFORM)-$(DESIGN)-$(CLK_FREQ_MHZ)MHz-pnr \
   CORE_UTILIZATION=$(CORE_UTILIZATION) \
@@ -81,16 +74,6 @@ PNR_ENV = \
   MAX_ROUTING_LAYER=$(MAX_ROUTING_LAYER) \
   PIN_CONSTRAINT_FILE=$(PIN_CONSTRAINT_FILE) \
   PNR_RESUME_FROM=$(PNR_RESUME_FROM)
-
-PNR_DOCKER_ENV = \
-  -e PNR_RESULT_DIR=result/$(PLATFORM)-$(DESIGN)-$(CLK_FREQ_MHZ)MHz-pnr \
-  -e CORE_UTILIZATION=$(CORE_UTILIZATION) \
-  -e CORE_ASPECT_RATIO=$(CORE_ASPECT_RATIO) \
-  -e PLACE_DENSITY=$(PLACE_DENSITY) \
-  -e MIN_ROUTING_LAYER=$(MIN_ROUTING_LAYER) \
-  -e MAX_ROUTING_LAYER=$(MAX_ROUTING_LAYER) \
-  -e PIN_CONSTRAINT_FILE=$(PIN_CONSTRAINT_FILE) \
-  -e PNR_RESUME_FROM=$(PNR_RESUME_FROM)
 
 # =====================================================================
 #  Default Target — Help
@@ -171,13 +154,13 @@ setup-opensta: ## Build OpenSTA locally (with CUDD)
 	wget -O third_party/cudd-3.0.0.tar.gz https://raw.githubusercontent.com/davidkebo/cudd/main/cudd_versions/cudd-3.0.0.tar.gz
 	tar -xvf third_party/cudd-3.0.0.tar.gz -C third_party
 	rm third_party/cudd-3.0.0.tar.gz
-	cd third_party/cudd-3.0.0 && mkdir -p ../cudd && ./configure && make -j$(NPROC)
+	cd third_party/cudd-3.0.0 && mkdir -p ../cudd && ./configure && $(MAKE_ENV_CLEAN) $(MAKE) -j$(NPROC)
 	# Clone and build OpenSTA
 	git clone https://github.com/parallaxsw/OpenSTA.git third_party/OpenSTA || true
-	cd third_party/OpenSTA && cmake -DCUDD_DIR=../cudd-3.0.0 -B build . && cmake --build build -j$(NPROC)
+	cd third_party/OpenSTA && $(MAKE_ENV_CLEAN) cmake -DCUDD_DIR=../cudd-3.0.0 -B build . && $(MAKE_ENV_CLEAN) cmake --build build -j$(NPROC)
 	# Build and install yosys-slang
 	git clone --recursive https://github.com/povik/yosys-slang || true
-	cd yosys-slang && make -j$(NPROC) && make install
+	cd yosys-slang && $(MAKE_ENV_CLEAN) cmake -S . -B build -G "Unix Makefiles" -DCMAKE_MAKE_PROGRAM="$(MAKE_BIN)" -DYOSYS_CONFIG=yosys-config -DCMAKE_BUILD_TYPE=Release && $(MAKE_ENV_CLEAN) cmake --build build --parallel $(NPROC) && $(MAKE_ENV_CLEAN) cmake --install build
 	@echo ">>> Setup complete. Run 'make flow' to test the full flow."
 
 setup-openroad: ## Build OpenROAD from source
@@ -211,14 +194,6 @@ else
 		&& ./etc/Build.sh -cmake='-DCUDD_DIR=$(HOME)/.local'
 endif
 
-setup-docker: ## Pull Docker images (OpenSTA + OpenROAD)
-	# Pull pre-built OpenSTA Docker image
-	git clone https://github.com/parallaxsw/OpenSTA.git third_party/OpenSTA || true
-	cd third_party/OpenSTA && docker build --file Dockerfile.ubuntu_22.04 --tag opensta .
-	# Pull pre-built OpenROAD Docker image
-	docker pull openroad/openroad:latest
-	docker tag openroad/openroad:latest openroad
-
 # =====================================================================
 #  Synthesis
 # =====================================================================
@@ -245,14 +220,6 @@ sta: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Run OpenSTA timing analysis
 sta-detail: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Detailed timing report (path-level)
 	$(COMMON_ENV) \
 	$(OPENSTA_BIN) -exit ./scripts/opensta_detail.tcl | tee $(RESULT_DIR)/sta_detail.log
-
-sta-docker: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Run OpenSTA via Docker
-	@docker run -i --rm $(DOCKER_ENV) \
-		-v .:/data opensta -exit data/scripts/opensta.tcl | tee $(RESULT_DIR)/sta.log
-
-sta-detail-docker: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Detailed timing report via Docker
-	@docker run -i --rm $(DOCKER_ENV) \
-		-v .:/data opensta -exit data/scripts/opensta_detail.tcl | tee $(RESULT_DIR)/sta_detail.log
 
 show: $(RESULT_DIR)/$(NETLIST_SYN_V) ## PPA summary report (formatted)
 	@python3 $(SCRIPT_DIR)/ppa_summary.py $(RESULT_DIR) --platform $(PLATFORM) --design $(DESIGN)
@@ -283,19 +250,6 @@ pnr-fast: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Fast PnR (fewer iterations, multi-th
 	$(COMMON_ENV) $(PNR_ENV) DR_THREADS=$(DR_THREADS) \
 	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr_fast.tcl \
 	| tee $(PNR_RESULT_DIR)/pnr.log
-
-pnr-docker: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Run PnR via Docker
-	@mkdir -p $(PNR_RESULT_DIR)
-	@docker run -i --rm $(DOCKER_ENV) $(PNR_DOCKER_ENV) \
-		-v .:/data openroad -exit /data/scripts/openroad_pnr.tcl \
-		| tee $(PNR_RESULT_DIR)/pnr.log
-
-pnr-fast-docker: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Fast PnR via Docker
-	@mkdir -p $(PNR_RESULT_DIR)
-	@docker run -i --rm $(DOCKER_ENV) $(PNR_DOCKER_ENV) \
-		-e DR_THREADS=$(DR_THREADS) \
-		-v .:/data openroad -exit /data/scripts/openroad_pnr_fast.tcl \
-		| tee $(PNR_RESULT_DIR)/pnr.log
 
 # Per-stage PnR targets (resume from a specific stage)
 pnr-from-place: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Resume PnR from placement
@@ -370,17 +324,6 @@ viz-openroad: $(PNR_RESULT_DIR)/$(DESIGN)_final.def ## Layout images via OpenROA
 		| tee $(PNR_RESULT_DIR)/viz_layout.log
 	@echo "=== Layout images in $(PNR_RESULT_DIR)/images/ ==="
 
-viz-openroad-docker: $(PNR_RESULT_DIR)/$(DESIGN)_final.def ## Layout images via OpenROAD (Docker)
-	@echo "=== Generating layout images via OpenROAD (Docker) ==="
-	@docker run -i --rm \
-		-e DESIGN=$(DESIGN) \
-		-e PNR_RESULT_DIR=result/$(PLATFORM)-$(DESIGN)-$(CLK_FREQ_MHZ)MHz-pnr \
-		-e PLATFORM=$(PLATFORM) \
-		-v .:/data openroad \
-		xvfb-run -a openroad -gui -exit /data/scripts/openroad_viz.tcl \
-		| tee $(PNR_RESULT_DIR)/viz_layout.log
-	@echo "=== Layout images in $(PNR_RESULT_DIR)/images/ ==="
-
 viz-klayout: $(PNR_RESULT_DIR)/$(DESIGN)_final.def ## Layout images via KLayout (headless)
 	@echo "=== Generating layout images via KLayout ==="
 	QT_QPA_PLATFORM=offscreen klayout -z -r $(SCRIPT_DIR)/viz_layout_klayout.py \
@@ -399,6 +342,16 @@ viz-timing: $(RESULT_DIR)/$(NETLIST_SYN_V).timing_model ## Timing model plots (a
 		$(RESULT_DIR)/$(NETLIST_SYN_V).timing_model \
 		-o $(RESULT_DIR)
 	@echo "=== Timing plots in $(RESULT_DIR)/ ==="
+
+viz-area: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Per-module area treemap + bar chart (syn only, no PnR)
+	@echo "=== Generating per-module area visualization ==="
+	python3 $(SCRIPT_DIR)/viz_module_area.py \
+		--hier-json $(RESULT_DIR)/$(DESIGN)_hier.json \
+		--syn-json  $(RESULT_DIR)/$(DESIGN)_syn.json \
+		--liberty   $(PLATFORM_MERGED_LIB) \
+		--design    $(DESIGN) \
+		-o          $(RESULT_DIR)
+	@echo "=== Area visualization in $(RESULT_DIR)/ ==="
 
 viz-arch-dot: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Architecture diagram (dot/svg)
 	@echo "=== Generating architecture diagram ==="
@@ -478,13 +431,13 @@ clean-pnr: ## Remove PnR results only
 #  .PHONY
 # =====================================================================
 .PHONY: help \
-        setup setup-nangate45 setup-asap7 setup-opensta setup-openroad setup-docker \
-        syn sta sta-detail sta-docker sta-detail-docker show show-raw summary summary-json \
-        pnr pnr-fast pnr-docker pnr-fast-docker \
+        setup setup-nangate45 setup-asap7 setup-opensta setup-openroad \
+        syn sta sta-detail show show-raw summary summary-json \
+        pnr pnr-fast \
         pnr-from-place pnr-from-cts pnr-from-route pnr-from-finish \
         gds \
         flow flow-gds \
-        viz viz-openroad viz-openroad-docker viz-klayout viz-timing viz-arch-dot viz-png viz-label \
+        viz viz-openroad viz-klayout viz-timing viz-arch-dot viz-area viz-png viz-label \
         gui gui-klayout \
         test test-syn test-sta test-pnr test-viz test-flow \
         clean clean-pnr

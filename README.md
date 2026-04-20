@@ -26,7 +26,7 @@ Run `make help` to see all available targets.
 
 ## Setup
 
-### Option A: Full local build (recommended)
+### Local build
 
 ```shell
 make setup
@@ -44,17 +44,6 @@ Alternatively, build individual components:
 make setup-nangate45    # Download NanGate45 PDK only
 make setup-opensta      # Build CUDD + OpenSTA only
 make setup-openroad     # Build OpenROAD only
-```
-
-### Option B: Docker
-
-```shell
-make setup-docker       # Pull/build OpenSTA + OpenROAD Docker images
-make setup-nangate45    # Download NanGate45 PDK
-
-# Then use '-docker' suffix for flow targets:
-make sta-docker show
-make pnr-docker
 ```
 
 ### ASAP7 Platform (7nm)
@@ -195,18 +184,6 @@ make gui-klayout        # KLayout GUI
 | `<DESIGN>_chip_power.png`     | Power distribution network              |
 | `<DESIGN>_chip_clock.png`     | Clock tree network                      |
 | `<DESIGN>_<stage>_full.png`   | Per-stage snapshots (floorplan → final) |
-
-### Docker Variants
-
-Append `-docker` to flow targets:
-
-```shell
-make sta-docker show
-make sta-detail-docker
-make pnr-docker
-make pnr-fast-docker
-make viz-openroad-docker
-```
 
 ### Clean
 
