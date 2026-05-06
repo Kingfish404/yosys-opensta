@@ -40,6 +40,11 @@ PIN_CONSTRAINT_FILE ?=## Pin constraint TCL file (optional)
 PNR_RESUME_FROM ?=## Resume PnR from stage (floorplan|place|cts|route|finish)
 
 # =====================================================================
+#  Visualization Parameters
+# =====================================================================
+VIZ_AREA_DEPTH ?= 2## viz-area hierarchy depth (1=top modules, 2=one submodule level, …)
+
+# =====================================================================
 #  Derived Paths (do not edit)
 # =====================================================================
 RESULT_DIR = $(PROJ_PATH)/result/$(PLATFORM)-$(DESIGN)-$(CLK_FREQ_MHZ)MHz
@@ -350,6 +355,7 @@ viz-area: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Per-module area treemap + bar chart 
 		--syn-json  $(RESULT_DIR)/$(DESIGN)_syn.json \
 		--liberty   $(PLATFORM_MERGED_LIB) \
 		--design    $(DESIGN) \
+		--depth     $(VIZ_AREA_DEPTH) \
 		-o          $(RESULT_DIR)
 	@echo "=== Area visualization in $(RESULT_DIR)/ ==="
 

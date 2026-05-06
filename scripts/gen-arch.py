@@ -420,7 +420,7 @@ def _parse_liberty_areas(liberty_path):
     return cell_areas
 
 
-def _compute_module_areas(syn_mod, modules, cell_areas):
+def _compute_module_areas(syn_mod, modules, cell_areas, prefix_depth=1):
     """Compute physical area per module from post-synth JSON.
 
     Maps each NanGate45 cell to a module prefix via net bit connections,
@@ -429,7 +429,13 @@ def _compute_module_areas(syn_mod, modules, cell_areas):
     Args:
         syn_mod: The post-synth top module dict from write_json.
         modules: {mod_name: sig_count} from pre-synth hierarchy extraction.
+            Only nets whose first dot-segment is in this set are considered.
         cell_areas: {cell_type: area} from liberty parsing.
+        prefix_depth: How many leading dot-segments to use as the bucket key
+            (1 = top-level module only, 2 = include one submodule level, …).
+            For nets shallower than ``prefix_depth + 1`` segments, the entire
+            net path minus its leaf signal is used (i.e. they fall back to a
+            shallower bucket — typically the top-level module itself).
 
     Returns:
         {mod_name: area_um2} for each module, plus "__unassigned__" for unmapped cells.
@@ -437,14 +443,20 @@ def _compute_module_areas(syn_mod, modules, cell_areas):
     netnames = syn_mod.get("netnames", {})
     cells = syn_mod.get("cells", {})
 
+    if prefix_depth < 1:
+        prefix_depth = 1
+
     # Build bit → module prefix mapping from hierarchical net names
     bit_to_prefix = defaultdict(set)
     for name, info in netnames.items():
         if name.startswith("$") or "." not in name:
             continue
-        prefix = name.split(".")[0]
-        if prefix not in modules:
+        parts = name.split(".")
+        if parts[0] not in modules:
             continue
+        # Keep one segment for the leaf signal; use up to prefix_depth path segments.
+        depth = min(len(parts) - 1, prefix_depth)
+        prefix = ".".join(parts[:depth]) if depth > 0 else parts[0]
         for bit in info.get("bits", []):
             if isinstance(bit, int):
                 bit_to_prefix[bit].add(prefix)

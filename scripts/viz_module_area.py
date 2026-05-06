@@ -43,7 +43,8 @@ def _load_gen_arch():
     return mod
 
 
-def build_area_map(hier_json_path, syn_json_path, liberty_path, design=None):
+def build_area_map(hier_json_path, syn_json_path, liberty_path, design=None,
+                   prefix_depth=1):
     ga = _load_gen_arch()
 
     with open(hier_json_path, "r") as f:
@@ -61,7 +62,9 @@ def build_area_map(hier_json_path, syn_json_path, liberty_path, design=None):
 
     cell_areas = ga._parse_liberty_areas(liberty_path)
     modules_for_area, _, _ = ga.extract_hierarchy_from_nets(top_mod)
-    area_map = ga._compute_module_areas(syn_top_mod, modules_for_area, cell_areas)
+    area_map = ga._compute_module_areas(
+        syn_top_mod, modules_for_area, cell_areas, prefix_depth=prefix_depth
+    )
     return top_name, area_map, ga
 
 
@@ -159,7 +162,20 @@ def main():
     p.add_argument(
         "--prefix", default=None, help="Output file prefix (default: <design>)"
     )
+    p.add_argument(
+        "--depth",
+        type=int,
+        default=1,
+        help=(
+            "Hierarchy depth for area buckets: 1 = top-level modules only "
+            "(default), 2 = also split one submodule level (e.g. core.idu, "
+            "core.exu), 3 = two submodule levels, etc."
+        ),
+    )
     args = p.parse_args()
+    if args.depth < 1:
+        print(f"Error: --depth must be >= 1 (got {args.depth})", file=sys.stderr)
+        return 1
 
     for path in (args.hier_json, args.syn_json, args.liberty):
         if not os.path.isfile(path):
@@ -169,13 +185,17 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     top_name, area_map, ga = build_area_map(
-        args.hier_json, args.syn_json, args.liberty, args.design
+        args.hier_json, args.syn_json, args.liberty, args.design,
+        prefix_depth=args.depth,
     )
     prefix = args.prefix or top_name
+    if args.depth > 1:
+        prefix = f"{prefix}_d{args.depth}"
 
     total = sum(v for k, v in area_map.items() if k != "__unassigned__")
     unassigned = area_map.get("__unassigned__", 0.0)
     print(f"Top module:    {top_name}")
+    print(f"Prefix depth:  {args.depth}")
     print(f"Modules found: {sum(1 for k in area_map if k != '__unassigned__')}")
     print(f"Total area:    {total:.0f} µm² (assigned)")
     if unassigned > 0:
