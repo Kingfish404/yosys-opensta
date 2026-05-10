@@ -94,7 +94,7 @@ def main():
         "--engine",
         default="auto",
         choices=["auto", "dot", "sfdp", "fdp", "neato"],
-        help="Graphviz layout engine (default: auto — uses 'sfdp' for large files, 'dot' otherwise)",
+        help="Graphviz layout engine (default: auto -- uses 'sfdp' for large files, 'dot' otherwise)",
     )
     parser.add_argument(
         "--no-convert",

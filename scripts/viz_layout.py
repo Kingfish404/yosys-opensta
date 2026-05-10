@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Pure-Python DEF layout visualizer using matplotlib.
-No GUI, X11, or Xvfb needed — works in headless CLI mode.
+No GUI, X11, or Xvfb needed -- works in headless CLI mode.
 Generates ISSCC/academic-paper style chip layout images.
 
 Usage:
@@ -19,12 +19,12 @@ import sys
 from dataclasses import dataclass, field
 
 import matplotlib
-matplotlib.use("Agg")  # headless backend — no display needed
+matplotlib.use("Agg")  # headless backend -- no display needed
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.collections import PatchCollection, LineCollection
 
-# ─── DEF data structures ─────────────────────────────────────────────
+# --- DEF data structures ---------------------------------------------
 
 @dataclass
 class Component:
@@ -79,7 +79,7 @@ class DEFData:
     net_io_direction: dict = field(default_factory=dict)  # net_name -> "INPUT"/"OUTPUT"/"INOUT"
 
 
-# ─── DEF parser ──────────────────────────────────────────────────────
+# --- DEF parser ------------------------------------------------------
 
 def _join_continued_lines(text: str) -> list:
     """Split DEF text into individual statements (joined across line breaks, split on ';')."""
@@ -100,7 +100,7 @@ def _join_continued_lines(text: str) -> list:
     return statements
 
 
-# Keywords that start DEF sections — must appear at word boundary
+# Keywords that start DEF sections -- must appear at word boundary
 # followed by whitespace+digit (section headers) or end-of marker.
 # Avoid matching inside net statements (e.g. NONDEFAULTRULE attribute).
 _SECTION_RE = re.compile(
@@ -120,7 +120,7 @@ def _flush_buf(buf: str, statements: list):
     if len(splits) <= 1:
         statements.append(buf)
         return
-    # Check if first keyword is not at position 0 — emit the prefix
+    # Check if first keyword is not at position 0 -- emit the prefix
     prev = 0
     for m in splits:
         if m.start() > prev:
@@ -208,7 +208,7 @@ def parse_def(filepath: str) -> DEFData:
                 name = nm.group(1)
                 dm = re.search(r"\+\s*DIRECTION\s+(INPUT|OUTPUT|INOUT)", cl)
                 direction = dm.group(1) if dm else ""
-                # extract PLACED/FIXED ( x y ) — last occurrence
+                # extract PLACED/FIXED ( x y ) -- last occurrence
                 pm = list(re.finditer(r"\+\s*(?:PLACED|FIXED)\s*\(\s*([\d.-]+)\s+([\d.-]+)\s*\)", cl))
                 x, y = (float(pm[-1].group(1)), float(pm[-1].group(2))) if pm else (0, 0)
                 lm = re.search(r"\+\s*LAYER\s+(\S+)", cl)
@@ -217,7 +217,7 @@ def parse_def(filepath: str) -> DEFData:
                 i += 1
             i += 1; continue
 
-        # NETS / SPECIALNETS — parse routed paths
+        # NETS / SPECIALNETS -- parse routed paths
         nets_match = re.match(r"(NETS|SPECIALNETS)\s+\d+\s*;", line)
         if nets_match:
             section = nets_match.group(1)
@@ -243,7 +243,7 @@ def parse_def(filepath: str) -> DEFData:
                 for rm in re.finditer(r"(?:ROUTED|NEW)\s+(\S+?)(?:\s+TAPER)?\s+(.+?)(?=(?:NEW|;|$))", cl):
                     layer = rm.group(1)
                     seg_text = rm.group(2)
-                    # Match ( x y ) or ( x y ext ) — take first 2 values, ignore optional 3rd
+                    # Match ( x y ) or ( x y ext ) -- take first 2 values, ignore optional 3rd
                     coords = re.findall(r"\(\s*([\d.*-]+)\s+([\d.*-]+)(?:\s+\d+)?\s*\)", seg_text)
                     prev_x, prev_y = None, None
                     for cx, cy in coords:
@@ -268,7 +268,7 @@ def parse_def(filepath: str) -> DEFData:
     return data
 
 
-# ─── LEF cell-size parser ────────────────────────────────────────────
+# --- LEF cell-size parser --------------------------------------------
 
 def parse_lef_sizes(lef_paths: list) -> dict:
     """Parse LEF files to extract cell name -> (width, height) in microns."""
@@ -294,7 +294,7 @@ def parse_lef_sizes(lef_paths: list) -> dict:
     return sizes
 
 
-# ─── ISSCC-style color scheme (dark bg, bright neon layers) ──────────
+# --- ISSCC-style color scheme (dark bg, bright neon layers) ----------
 
 BG_COLOR     = "#0d1117"       # deep dark (GitHub-dark inspired)
 DIE_BG       = "#161b22"       # slightly lighter die area
@@ -305,23 +305,23 @@ CELL_ALPHA   = 0.25
 FIXED_COLOR  = "#f78166"       # orange for fixed/filler
 FIXED_ALPHA  = 0.50
 
-# Cell category colors — distinct hues for different functional groups
+# Cell category colors -- distinct hues for different functional groups
 CELL_CAT_COLORS = {
-    "DFF":    "#e3b341",   # gold — flip-flops / registers
-    "LATCH":  "#d4a017",   # dark gold — latches
-    "BUF":    "#58a6ff",   # blue — buffers
-    "INV":    "#79c0ff",   # light blue — inverters
-    "MUX":    "#b392f0",   # purple — multiplexers
-    "AND":    "#3fb950",   # green — AND gates
-    "OR":     "#85e89d",   # light green — OR gates
-    "NAND":   "#f97583",   # pink-red — NAND gates
-    "NOR":    "#f85149",   # red — NOR gates
-    "XOR":    "#f692ce",   # magenta — XOR/XNOR gates
-    "AOI":    "#ffab70",   # orange — AND-OR-Invert
-    "OAI":    "#56d4dd",   # cyan — OR-AND-Invert
-    "HA":     "#d29922",   # amber — half/full adders
+    "DFF":    "#e3b341",   # gold -- flip-flops / registers
+    "LATCH":  "#d4a017",   # dark gold -- latches
+    "BUF":    "#58a6ff",   # blue -- buffers
+    "INV":    "#79c0ff",   # light blue -- inverters
+    "MUX":    "#b392f0",   # purple -- multiplexers
+    "AND":    "#3fb950",   # green -- AND gates
+    "OR":     "#85e89d",   # light green -- OR gates
+    "NAND":   "#f97583",   # pink-red -- NAND gates
+    "NOR":    "#f85149",   # red -- NOR gates
+    "XOR":    "#f692ce",   # magenta -- XOR/XNOR gates
+    "AOI":    "#ffab70",   # orange -- AND-OR-Invert
+    "OAI":    "#56d4dd",   # cyan -- OR-AND-Invert
+    "HA":     "#d29922",   # amber -- half/full adders
     "FA":     "#d29922",
-    "other":  "#8b949e",   # grey — uncategorized
+    "other":  "#8b949e",   # grey -- uncategorized
 }
 CELL_CAT_ALPHA = 0.45
 
@@ -351,7 +351,7 @@ PIN_OUT_COLOR= "#f85149"       # red
 PIN_IO_COLOR = "#d29922"       # amber
 DIE_EDGE     = "#c9d1d9"       # light grey die outline
 
-# Neon palette for metal layers — resembles EDA tool screenshots
+# Neon palette for metal layers -- resembles EDA tool screenshots
 METAL_COLORS = {
     "metal1":  "#58a6ff",  # blue
     "metal2":  "#f97583",  # pink-red
@@ -393,7 +393,7 @@ def metal_lw(layer: str) -> float:
     return METAL_LW.get(layer, 0.3)
 
 
-# ─── Rendering (ISSCC style) ────────────────────────────────────────
+# --- Rendering (ISSCC style) ----------------------------------------
 
 def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                show_routes: bool = True, show_special: bool = True,
@@ -411,7 +411,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
     if cell_sizes is None:
         cell_sizes = {}
 
-    # Figure setup — no spines, dark background
+    # Figure setup -- no spines, dark background
     aspect = die_w / die_h
     fig_h = 10
     fig_w = fig_h * aspect
@@ -460,7 +460,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                 linewidth=0, alpha=0.4,
             ))
 
-    # Special nets (power/ground) — draw BELOW cells so they appear as grid
+    # Special nets (power/ground) -- draw BELOW cells so they appear as grid
     if show_special and data.special_routes:
         layer_segs = {}
         for seg in data.special_routes:
@@ -473,8 +473,8 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                 alpha=0.25, zorder=1,
             ))
 
-    # Components (standard cells) — with real sizes from LEF
-    # Skip filler and tap cells (they fill empty space — invisible in ISSCC images)
+    # Components (standard cells) -- with real sizes from LEF
+    # Skip filler and tap cells (they fill empty space -- invisible in ISSCC images)
     _SKIP_PREFIXES = ("FILLCELL", "FILLER", "TAPCELL", "WELLTAP", "ENDCAP", "DECAP")
     if show_components and data.components:
         # Group cells by category for per-category coloring
@@ -499,7 +499,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                 patches, facecolor=color, edgecolor=color,
                 alpha=CELL_CAT_ALPHA, linewidth=0.3, zorder=2,
             ))
-        # Label cells — scale font to fit inside the cell rectangle
+        # Label cells -- scale font to fit inside the cell rectangle
         if cell_info:
             for cx, cy, cw, ch, ctype, cat in cell_info:
                 # Strip drive suffix for shorter label (e.g. AND2_X1 -> AND2)
@@ -518,7 +518,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                         ha="center", va="center", zorder=2,
                         clip_on=True)
 
-    # Signal routes — per metal layer with distinct colors
+    # Signal routes -- per metal layer with distinct colors
     # Separate I/O-connected nets from internal nets
     io_dir_color = {
         "INPUT":  PIN_IN_COLOR,
@@ -535,7 +535,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                 io_segs.setdefault(direction, []).append(pt)
             else:
                 layer_segs.setdefault(seg.layer, []).append(pt)
-        # Draw internal nets — lower metals first, higher on top
+        # Draw internal nets -- lower metals first, higher on top
         for layer in sorted(layer_segs.keys(),
                             key=lambda l: int(re.search(r'\d+', l).group()) if re.search(r'\d+', l) else 0):
             segs = layer_segs[layer]
@@ -550,7 +550,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                 alpha=0.85, zorder=4,
             ))
 
-    # I/O Pins — bright diamonds on die edge with labels
+    # I/O Pins -- bright diamonds on die edge with labels
     # Compute scale bar region to avoid label overlap
     _scale_bar_xl = data.die_xl / dbu + die_w * 0.01
     _scale_bar_xh = data.die_xl / dbu + die_w * 0.25
@@ -584,7 +584,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
                                 fontfamily='monospace', va='center', ha=ha,
                                 zorder=7)
 
-    # ─── Overlay: title + legend ─────────────────────────────────────
+    # --- Overlay: title + legend -------------------------------------
     # Title (top-left, within die area)
     ax.text(data.die_xl / dbu + die_w * 0.02,
             data.die_yh / dbu - die_h * 0.03,
@@ -655,7 +655,7 @@ def render_def(data: DEFData, title: str, out_path: str, dpi: int = 300,
 
 
 def _add_scale_bar(ax, die_w, die_h, x0, y0):
-    """Add a μm scale bar at the bottom-left of the die."""
+    """Add a um scale bar at the bottom-left of the die."""
     # Pick a nice round scale length (~10-20% of die width)
     raw = die_w * 0.15
     nice = 10 ** int(f"{raw:.0e}".split("e+")[1]) if raw >= 1 else 1
@@ -675,14 +675,14 @@ def _add_scale_bar(ax, die_w, die_h, x0, y0):
             color="#c9d1d9", linewidth=1.0, zorder=10)
     ax.plot([bar_x + nice, bar_x + nice], [bar_y - tick_h, bar_y + tick_h],
             color="#c9d1d9", linewidth=1.0, zorder=10)
-    label_text = f"{nice} μm" if nice >= 1 else f"{nice*1000:.0f} nm"
+    label_text = f"{nice} um" if nice >= 1 else f"{nice*1000:.0f} nm"
     ax.text(bar_x + nice / 2, bar_y + die_h * 0.015,
             label_text, fontsize=6, color="#c9d1d9",
             ha="center", va="bottom", fontfamily="monospace", zorder=10,
             bbox=dict(boxstyle="round,pad=0.15", facecolor=BG_COLOR, alpha=0.7, edgecolor="none"))
 
 
-# ─── Multi-stage rendering ───────────────────────────────────────────
+# --- Multi-stage rendering -------------------------------------------
 
 STAGES = [
     ("floorplan", "_floorplan.def", dict(show_routes=False, show_special=False)),
@@ -751,7 +751,7 @@ def main():
         print(f"  Parsing {stage} ...")
         data = parse_def(def_path)
         out_path = os.path.join(out_dir, f"{design}_{stage}.{fmt}")
-        render_def(data, f"{design} — {stage}", out_path, dpi=args.dpi,
+        render_def(data, f"{design} -- {stage}", out_path, dpi=args.dpi,
                    cell_sizes=cell_sizes, **opts)
         rendered += 1
 
@@ -763,16 +763,16 @@ def main():
 
         # Placement-only view
         out_path = os.path.join(out_dir, f"{design}_placement.{fmt}")
-        render_def(data, f"{design} — placement", out_path, dpi=args.dpi,
+        render_def(data, f"{design} -- placement", out_path, dpi=args.dpi,
                    show_routes=False, show_special=False, cell_sizes=cell_sizes)
 
         # Routing-only view
         out_path = os.path.join(out_dir, f"{design}_routing.{fmt}")
-        render_def(data, f"{design} — routing", out_path, dpi=args.dpi,
+        render_def(data, f"{design} -- routing", out_path, dpi=args.dpi,
                    show_components=False, show_pins=False, cell_sizes=cell_sizes)
         rendered += 2
 
-    print(f"\nDone — {rendered} images in {out_dir}/")
+    print(f"\nDone -- {rendered} images in {out_dir}/")
 
 
 if __name__ == "__main__":

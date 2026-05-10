@@ -1,4 +1,4 @@
-# KLayout batch script: merge DEF + cell GDS library → final GDS
+# KLayout batch script: merge DEF + cell GDS library -> final GDS
 #
 # Usage:
 #   klayout -z -r klayout_gds_merge.py \
@@ -10,7 +10,7 @@
 #     -rd out_gds=<output>.gds \
 #     [-rd design=<name>]
 #
-# This corresponds to ORFS stage 6 (6_1_merge → 6_final.gds).
+# This corresponds to ORFS stage 6 (6_1_merge -> 6_final.gds).
 
 import pya
 import os
@@ -91,7 +91,7 @@ print(f"Read DEF: {def_file}")
 # Explicitly parse the DEF to insert pin name labels on pin metal layers.
 
 def parse_lyt_layer_map(lyt_path):
-    """Parse .lyt technology file to extract LEF layer name → (gds_layer, gds_datatype) mapping."""
+    """Parse .lyt technology file to extract LEF layer name -> (gds_layer, gds_datatype) mapping."""
     name_to_gds = {}
     if not lyt_path or not os.path.exists(lyt_path):
         return name_to_gds
@@ -126,11 +126,11 @@ def add_pin_labels_from_def(layout, def_path, design_name, lyt_path=""):
         print("Warning: no top cell found, skipping pin labels")
         return 0
 
-    # Build LEF layer name → GDS number mapping from .lyt technology file
+    # Build LEF layer name -> GDS number mapping from .lyt technology file
     name_to_gds = parse_lyt_layer_map(lyt_path)
     print(f"Pin labels: parsed {len(name_to_gds)} layer mappings from .lyt")
 
-    # Dedicated pin marker layer (GDS 200/0) — bright, won't collide with routing
+    # Dedicated pin marker layer (GDS 200/0) -- bright, won't collide with routing
     PIN_MARKER_GDS_LAYER = 200
     PIN_MARKER_GDS_DT = 0
     pin_marker_li = layout.layer(PIN_MARKER_GDS_LAYER, PIN_MARKER_GDS_DT)
@@ -138,11 +138,11 @@ def add_pin_labels_from_def(layout, def_path, design_name, lyt_path=""):
     with open(def_path, 'r') as f:
         content = f.read()
 
-    # DEF database units per micron (e.g. 2000 → 1 DEF unit = 0.5 nm)
+    # DEF database units per micron (e.g. 2000 -> 1 DEF unit = 0.5 nm)
     m = re.search(r'UNITS\s+DISTANCE\s+MICRONS\s+(\d+)', content)
     def_units_per_um = int(m.group(1)) if m else 1000
 
-    # Scale factor: DEF units → layout database units
+    # Scale factor: DEF units -> layout database units
     scale = 1.0 / (def_units_per_um * layout.dbu)
 
     # Extract PINS section

@@ -1,12 +1,12 @@
 # =====================================================================
 #  Test Suite for yosys-opensta
-#  Usage: make test          — run all tests (syn + sta + pnr + viz)
-#         make test-syn      — synthesis smoke tests only
-#         make test-sta      — STA smoke tests only
-#         make test-pnr      — PnR smoke tests only
-#         make test-viz      — visualization tests only
-#         make test-flow     — full flow end-to-end (syn → sta → pnr)
-#         make clean         — remove test results
+#  Usage: make test          -- run all tests (syn + sta + pnr + viz)
+#         make test-syn      -- synthesis smoke tests only
+#         make test-sta      -- STA smoke tests only
+#         make test-pnr      -- PnR smoke tests only
+#         make test-viz      -- visualization tests only
+#         make test-flow     -- full flow end-to-end (syn -> sta -> pnr)
+#         make clean         -- remove test results
 #
 #  Append PLATFORM=asap7 to test against the ASAP7 platform.
 # =====================================================================
@@ -61,7 +61,7 @@ FAIL = \033[31mFAIL\033[0m
 # =====================================================================
 .DEFAULT_GOAL := test
 
-test: test-syn test-sta test-show test-pnr test-viz ## Run all tests
+test: test-syn test-sta test-show test-pnr test-signoff test-viz ## Run all tests
 	@echo ""
 	@echo -e "$(PASS) All tests passed."
 
@@ -152,7 +152,22 @@ test-pnr-counter: test-sta-counter ## Run PnR on counter
 		|| { echo -e "$(FAIL) Missing area_final.rpt"; exit 1; }
 	@test -s $(COUNTER_PNR_RESULT)/power_final.rpt \
 		|| { echo -e "$(FAIL) Missing power_final.rpt"; exit 1; }
+	@test -f $(COUNTER_PNR_RESULT)/$(COUNTER_DESIGN)_route_drc.rpt \
+		|| { echo -e "$(FAIL) Missing route DRC report"; exit 1; }
 	@echo -e "$(PASS) test-pnr-counter"
+
+# =====================================================================
+#  Signoff Precheck Tests
+# =====================================================================
+test-signoff: test-signoff-openroad ## Report-cleanliness gate
+	@echo -e "$(PASS) All signoff precheck tests passed."
+
+test-signoff-openroad: test-pnr-counter ## OpenROAD report parser must pass
+	@echo "=== TEST: signoff-openroad counter ($(PLATFORM)) ==="
+	@make -C $(ROOT_DIR) signoff-openroad $(COUNTER_ARGS)
+	@test -s $(COUNTER_PNR_RESULT)/signoff_openroad.json \
+		|| { echo -e "$(FAIL) Missing signoff_openroad.json"; exit 1; }
+	@echo -e "$(PASS) test-signoff-openroad"
 
 # =====================================================================
 #  Visualization Tests
@@ -160,7 +175,7 @@ test-pnr-counter: test-sta-counter ## Run PnR on counter
 test-viz: test-viz-arch test-viz-timing test-viz-layout ## Visualization smoke tests
 	@echo -e "$(PASS) All visualization tests passed."
 
-test-viz-arch: test-syn-op ## Architecture diagram (dot → svg)
+test-viz-arch: test-syn-op ## Architecture diagram (dot -> svg)
 	@echo "=== TEST: viz-arch-dot op ($(PLATFORM)) ==="
 	@make -C $(ROOT_DIR) viz-arch-dot $(OP_ARGS)
 	@test -s $(OP_RESULT)/$(OP_DESIGN)_arch.dot \
@@ -196,7 +211,41 @@ test-viz-label: test-viz-png ## Labeled module overlay (requires viz-png)
 	@echo -e "$(PASS) test-viz-label"
 
 # =====================================================================
-#  Full Flow Test (end-to-end: syn → sta → pnr)
+#  Simulation Tests (iverilog) -- exercise the testbenches in tests/tb/
+#  Each tb header documents the exact compile/run commands; this target
+#  mirrors them so CI (.github/workflows/ci.yml `sim` job) can invoke
+#  them as `make -C tests test-sim`.
+# =====================================================================
+SIM_DIR := $(TESTS_DIR)/sim
+
+test-sim: test-sim-op test-sim-axi ## RTL simulation smoke tests (iverilog)
+	@echo -e "$(PASS) test-sim"
+
+test-sim-op: ## tb_tt_um_op_ref + tt_um_op_ref + example/op.v
+	@echo "=== TEST: sim tb_tt_um_op_ref ==="
+	@mkdir -p $(SIM_DIR)
+	@iverilog -g2012 -o $(SIM_DIR)/tb_op.vvp \
+		$(TESTS_DIR)/tb/tb_tt_um_op_ref.v \
+		$(TESTS_DIR)/designs/tt_um_op_ref.v \
+		$(ROOT_DIR)/example/op.v
+	@cd $(SIM_DIR) && vvp tb_op.vvp 2>&1 | tee tb_op.log
+	@! grep -E "(^|[^A-Za-z])(ERROR|FAIL|FAILED)([^A-Za-z]|$$)" $(SIM_DIR)/tb_op.log \
+		|| { echo -e "$(FAIL) tb_tt_um_op_ref reported errors"; exit 1; }
+	@echo -e "$(PASS) test-sim-op"
+
+test-sim-axi: ## tb_axi4_sram_slave + axi4_sram_slave
+	@echo "=== TEST: sim tb_axi4_sram_slave ==="
+	@mkdir -p $(SIM_DIR)
+	@iverilog -g2012 -o $(SIM_DIR)/tb_axi.vvp \
+		$(TESTS_DIR)/tb/tb_axi4_sram_slave.v \
+		$(TESTS_DIR)/designs/axi4_sram_slave.v
+	@cd $(SIM_DIR) && vvp tb_axi.vvp 2>&1 | tee tb_axi.log
+	@! grep -E "(^|[^A-Za-z])(ERROR|FAIL|FAILED)([^A-Za-z]|$$)" $(SIM_DIR)/tb_axi.log \
+		|| { echo -e "$(FAIL) tb_axi4_sram_slave reported errors"; exit 1; }
+	@echo -e "$(PASS) test-sim-axi"
+
+# =====================================================================
+#  Full Flow Test (end-to-end: syn -> sta -> pnr)
 # =====================================================================
 test-flow: ## Full flow end-to-end on counter
 	@echo "=== TEST: flow counter ($(PLATFORM)) ==="
@@ -221,9 +270,10 @@ clean-all: ## Remove test results for all platforms
 	-rm -rf $(ROOT_DIR)/result/*-$(OP_DESIGN)-*
 	@echo "Test results cleaned."
 
-.PHONY: test test-syn test-sta test-show test-pnr test-viz test-flow \
+.PHONY: test test-syn test-sta test-show test-pnr test-signoff test-viz test-flow \
+        test-sim test-sim-op test-sim-axi \
         test-syn-counter test-syn-op \
         test-sta-counter test-sta-op \
-        test-pnr-counter \
+	test-pnr-counter test-signoff-openroad \
         test-viz-arch test-viz-timing test-viz-layout test-viz-png test-viz-label \
         clean clean-all

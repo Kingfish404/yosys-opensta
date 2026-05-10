@@ -9,7 +9,7 @@ set SC_LEF       $LIB_DIR/lef/NangateOpenCellLibrary.macro.mod.lef
 set LIB_FILE     $LIB_DIR/lib/NangateOpenCellLibrary_typical.lib
 set LIB_FILES    [list $LIB_FILE]
 
-# Time unit: liberty uses ns → MHz_to_period factor = 1e3
+# Time unit: liberty uses ns -> MHz_to_period factor = 1e3
 set TIME_SCALE 1000.0
 set TIME_UNIT "ns"
 

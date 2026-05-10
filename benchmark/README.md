@@ -10,7 +10,7 @@ make sta-hazard3
 make sta-picorv32
 make sta-serv
 
-# Full flow (syn → sta → pnr)
+# Full flow (syn -> sta -> pnr)
 make flow-hazard3
 make flow-picorv32
 make flow-serv

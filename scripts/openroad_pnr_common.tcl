@@ -1,5 +1,5 @@
 #===========================================================
-# OpenROAD Physical Design Flow — Common Implementation
+# OpenROAD Physical Design Flow -- Common Implementation
 #
 # This file contains the shared PnR flow logic.
 # It is sourced by openroad_pnr.tcl and openroad_pnr_fast.tcl
@@ -61,6 +61,47 @@ if {[info exists env(CORE_ASPECT_RATIO)]} {
 set PLACE_DENSITY $_DEFAULT_PLACE_DENSITY
 if {[info exists env(PLACE_DENSITY)]} {
   set PLACE_DENSITY $::env(PLACE_DENSITY)
+}
+
+set REPAIR_ANTENNAS 0
+if {[info exists env(REPAIR_ANTENNAS)] && $::env(REPAIR_ANTENNAS) ne "0"} {
+  set REPAIR_ANTENNAS 1
+}
+
+set ANTENNA_REPAIR_ITERS 1
+if {[info exists env(ANTENNA_REPAIR_ITERS)]} {
+  set ANTENNA_REPAIR_ITERS $::env(ANTENNA_REPAIR_ITERS)
+}
+
+set ANTENNA_REPAIR_DRT_ITERS 0
+if {[info exists env(ANTENNA_REPAIR_DRT_ITERS)]} {
+  set ANTENNA_REPAIR_DRT_ITERS $::env(ANTENNA_REPAIR_DRT_ITERS)
+}
+
+set ANTENNA_RATIO_MARGIN 0
+if {[info exists env(ANTENNA_RATIO_MARGIN)]} {
+  set ANTENNA_RATIO_MARGIN $::env(ANTENNA_RATIO_MARGIN)
+}
+
+set ANTENNA_REPAIR_EXTRA_ARGS [list]
+if {[info exists env(ANTENNA_REPAIR_EXTRA_ARGS)] && $::env(ANTENNA_REPAIR_EXTRA_ARGS) ne ""} {
+  set ANTENNA_REPAIR_EXTRA_ARGS $::env(ANTENNA_REPAIR_EXTRA_ARGS)
+}
+
+proc _build_antenna_repair_args {iterations} {
+  global ANTENNA_DIODE_CELL ANTENNA_DIODE_CELL_AND_PORT ANTENNA_RATIO_MARGIN ANTENNA_REPAIR_EXTRA_ARGS
+  set antenna_repair_args [list]
+  if {[info exists ANTENNA_DIODE_CELL] && $ANTENNA_DIODE_CELL ne ""} {
+    lappend antenna_repair_args $ANTENNA_DIODE_CELL
+  } elseif {[info exists ANTENNA_DIODE_CELL_AND_PORT] && [llength $ANTENNA_DIODE_CELL_AND_PORT] >= 1} {
+    lappend antenna_repair_args [lindex $ANTENNA_DIODE_CELL_AND_PORT 0]
+  }
+  lappend antenna_repair_args -iterations $iterations
+  lappend antenna_repair_args -ratio_margin $ANTENNA_RATIO_MARGIN
+  foreach antenna_repair_extra_arg $ANTENNA_REPAIR_EXTRA_ARGS {
+    lappend antenna_repair_args $antenna_repair_extra_arg
+  }
+  return $antenna_repair_args
 }
 
 # Routing layers: read from env if present; otherwise let config.tcl set them
@@ -148,8 +189,18 @@ if {$_resume_from ne ""} {
       puts "  Run earlier stages first, or use PNR_RESUME_FROM with an earlier stage."
       exit 1
     }
-    puts "\n>>> Resuming from stage '$_resume_from' — loading $_ckpt_file ..."
+    puts "\n>>> Resuming from stage '$_resume_from' -- loading $_ckpt_file ..."
     read_db $_ckpt_file
+    foreach lib $LIB_FILES {
+      read_liberty $lib
+    }
+    source $SET_RC_TCL
+    if {[file exists $SDC_FILE]} {
+      read_sdc $SDC_FILE
+      puts "Read SDC: $SDC_FILE"
+    } else {
+      puts "Warning: SDC not found ($SDC_FILE); resumed timing context may be incomplete"
+    }
   }
 }
 
@@ -359,6 +410,18 @@ if {!$_SKIP_POST_GRT_REPAIR} {
   estimate_parasitics -global_routing
 }
 
+if {$REPAIR_ANTENNAS} {
+  puts "\n>>> Repairing antenna violations ..."
+  set antenna_repair_args [_build_antenna_repair_args $ANTENNA_REPAIR_ITERS]
+  repair_antennas {*}$antenna_repair_args
+  detailed_placement
+  global_route -start_incremental
+  global_route -end_incremental \
+    -congestion_iterations $_GRT_CONGESTION_ITERS
+  set_propagated_clock [all_clocks]
+  estimate_parasitics -global_routing
+}
+
 write_def $PNR_DIR/${DESIGN}_grouted.def
 puts "Global-routed DEF written: $PNR_DIR/${DESIGN}_grouted.def"
 
@@ -370,6 +433,21 @@ detailed_route \
   -output_drc $PNR_DIR/${DESIGN}_route_drc.rpt \
   -output_maze $PNR_DIR/${DESIGN}_maze.log \
   -verbose 1
+
+if {$REPAIR_ANTENNAS && $ANTENNA_REPAIR_DRT_ITERS > 0} {
+  set antenna_repair_drt_iter 0
+  while {[check_antennas] && $antenna_repair_drt_iter < $ANTENNA_REPAIR_DRT_ITERS} {
+    incr antenna_repair_drt_iter
+    puts "\n>>> Post-detailed-route antenna repair iteration $antenna_repair_drt_iter ..."
+    set antenna_repair_args [_build_antenna_repair_args 1]
+    repair_antennas {*}$antenna_repair_args
+    detailed_placement
+    detailed_route \
+      -output_drc $PNR_DIR/${DESIGN}_route_drc.rpt \
+      -output_maze $PNR_DIR/${DESIGN}_maze.log \
+      -verbose 1
+  }
+}
 
 # Save route checkpoint
 write_db $PNR_DIR/4_route.odb
@@ -410,7 +488,7 @@ report_checks -path_delay max \
   -group_path_count $_RPT_MAX_GROUP_COUNT \
   -endpoint_path_count $_RPT_MAX_ENDPOINT_COUNT \
   -format full_clock_expanded \
-  -fields {slew cap input_pin net fanout} \
+  -fields {capacitance slew input_pin net fanout} \
   -digits 3 \
   > $PNR_DIR/timing_max_final.rpt
 
@@ -418,14 +496,14 @@ report_checks -path_delay min \
   -group_path_count $_RPT_MIN_GROUP_COUNT \
   -endpoint_path_count $_RPT_MIN_ENDPOINT_COUNT \
   -format full_clock_expanded \
-  -fields {slew cap input_pin net fanout} \
+  -fields {capacitance slew input_pin net fanout} \
   -digits 3 \
   > $PNR_DIR/timing_min_final.rpt
 
 report_check_types -max_delay -min_delay -violators \
   > $PNR_DIR/timing_violators.rpt
 
-report_power  > $PNR_DIR/power_final.rpt
+report_power > $PNR_DIR/power_final.rpt
 
 set area_rpt [open $PNR_DIR/area_final.rpt w]
 puts $area_rpt "=== Design Area ==="

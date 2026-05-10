@@ -103,16 +103,16 @@ def write_bar_chart(top_name, area_map, out_path, fmt="svg"):
     for i, v in enumerate(values):
         pct = v / total * 100 if total > 0 else 0
         label = (
-            f"{v/1000:.1f}K µm² ({pct:.1f}%)"
+            f"{v/1000:.1f}K um^2 ({pct:.1f}%)"
             if v >= 1000
-            else f"{v:.0f} µm² ({pct:.1f}%)"
+            else f"{v:.0f} um^2 ({pct:.1f}%)"
         )
         ax.text(v, i, " " + label, va="center", fontsize=9)
 
-    ax.set_xlabel("Area (µm²)")
-    title = f"{top_name} — Module Area Breakdown (total: {total/1000:.1f}K µm²"
+    ax.set_xlabel("Area (um^2)")
+    title = f"{top_name} -- Module Area Breakdown (total: {total/1000:.1f}K um^2"
     if unassigned > 0:
-        title += f", unassigned: {unassigned/1000:.1f}K µm²"
+        title += f", unassigned: {unassigned/1000:.1f}K um^2"
     title += ")"
     ax.set_title(title)
     ax.grid(axis="x", linestyle="--", alpha=0.4)
@@ -197,14 +197,14 @@ def main():
     print(f"Top module:    {top_name}")
     print(f"Prefix depth:  {args.depth}")
     print(f"Modules found: {sum(1 for k in area_map if k != '__unassigned__')}")
-    print(f"Total area:    {total:.0f} µm² (assigned)")
+    print(f"Total area:    {total:.0f} um^2 (assigned)")
     if unassigned > 0:
-        print(f"Unassigned:    {unassigned:.0f} µm²")
+        print(f"Unassigned:    {unassigned:.0f} um^2")
     for mod, a in sorted(area_map.items(), key=lambda x: -x[1]):
         if mod == "__unassigned__":
             continue
         pct = (a / total * 100) if total > 0 else 0
-        print(f"  {mod:<30s} {a:>12.0f} µm²  ({pct:5.1f}%)")
+        print(f"  {mod:<30s} {a:>12.0f} um^2  ({pct:5.1f}%)")
 
     tree_path = os.path.join(args.out_dir, f"{prefix}_area_treemap.svg")
     bar_path = os.path.join(args.out_dir, f"{prefix}_area_bar.svg")

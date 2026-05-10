@@ -1,0 +1,140 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Target platform (or 'all' for nangate45+asap7+sky130hd)"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - nangate45
+          - asap7
+          - sky130hd
+      clk_freq_mhz:
+        description: "Clock frequency (MHz)"
+        required: false
+        default: "50"
+  # Run on the 1st of every month at 04:17 UTC (offset from ci.yml so
+  # the two don't compete for the same runner pool). Same rationale as
+  # ci.yml: keep results within retention, and surface upstream regressions
+  # from yosys / OpenSTA / OpenROAD / Hazard3 / PicoRV32 / SERV during
+  # idle periods of this repo.
+  schedule:
+    - cron: "17 4 1 * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Synth + STA on third-party RISC-V cores (Hazard3, PicoRV32, SERV).
+  # Each core runs in parallel; the validator (scripts/check_benchmark.py)
+  # asserts that the STA report is well-formed against the chosen
+  # standard-cell library -- i.e. the design was actually parsed, mapped
+  # cells exceed a per-design floor, no memories were silently dropped,
+  # and a real critical path / fmax / chip-area was produced.
+  # ---------------------------------------------------------------------------
+  benchmark:
+    name: ${{ matrix.core }} on ${{ matrix.platform }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        core: [hazard3, picorv32, serv]
+        platform: [nangate45, asap7, sky130hd]
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      CLK_FREQ_MHZ: ${{ inputs.clk_freq_mhz || '50' }}
+      # Skip jobs whose matrix.platform doesn't match the dispatch input
+      # (when input is something other than 'all'). The job still spawns
+      # but its real work is gated to a single early step.
+      SKIP_PLATFORM: ${{ (inputs.platform != '' && inputs.platform != 'all' && inputs.platform != matrix.platform) && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Skip non-selected platform (workflow_dispatch)
+        if: env.SKIP_PLATFORM == '1'
+        run: |
+          echo "Skipping ${{ matrix.core }} on ${{ matrix.platform }} (dispatch selected '${{ inputs.platform }}')."
+          echo "_skipped: dispatch selected '${{ inputs.platform }}'_" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install apt dependencies
+        if: env.SKIP_PLATFORM == '0'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake bison flex libfl-dev \
+            tcl-dev tcl tk swig libreadline-dev \
+            libeigen3-dev zlib1g-dev libffi-dev pkg-config \
+            git wget ca-certificates python3
+
+      - name: Set up Homebrew
+        if: env.SKIP_PLATFORM == '0'
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Install yosys (brew, newer than apt -- required by yosys-slang HEAD)
+        if: env.SKIP_PLATFORM == '0'
+        run: brew install yosys
+
+      - name: Build CUDD + OpenSTA + yosys-slang
+        if: env.SKIP_PLATFORM == '0'
+        run: make setup-opensta
+
+      - name: Download PDK (${{ matrix.platform }})
+        if: env.SKIP_PLATFORM == '0'
+        run: make setup-${{ matrix.platform }}
+
+      - name: Run sta + validation (${{ matrix.core }} on ${{ matrix.platform }})
+        if: env.SKIP_PLATFORM == '0'
+        run: |
+          make -C benchmark ci-${{ matrix.core }} \
+            PLATFORM=$PLATFORM CLK_FREQ_MHZ=$CLK_FREQ_MHZ
+
+      - name: Print STA summary
+        if: always() && env.SKIP_PLATFORM == '0'
+        run: |
+          set +e
+          for log in result/${PLATFORM}-*-${CLK_FREQ_MHZ}MHz/sta.log; do
+            [ -f "$log" ] || continue
+            echo "===== $log ====="
+            grep -E "^DESIGN:|slack \(|period_min|fmax =|Chip area" "$log" || true
+          done
+
+      - name: PPA table -> job summary
+        if: always() && env.SKIP_PLATFORM == '0'
+        run: |
+          set +e
+          shopt -s nullglob
+          dirs=( result/${PLATFORM}-*-${CLK_FREQ_MHZ}MHz )
+          if [ "${#dirs[@]}" -eq 0 ]; then
+            echo "_no result directories_" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 scripts/ppa_to_markdown.py "${dirs[@]}" \
+            --title "Benchmark PPA -- ${{ matrix.core }} on ${PLATFORM} @ ${CLK_FREQ_MHZ} MHz" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts (${{ matrix.core }} / ${{ matrix.platform }})
+        if: always() && env.SKIP_PLATFORM == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.core }}-${{ matrix.platform }}-${{ env.CLK_FREQ_MHZ }}MHz
+          path: |
+            result/${{ matrix.platform }}-*-${{ env.CLK_FREQ_MHZ }}MHz/*.txt
+            result/${{ matrix.platform }}-*-${{ env.CLK_FREQ_MHZ }}MHz/*.log
+            result/${{ matrix.platform }}-*-${{ env.CLK_FREQ_MHZ }}MHz/*.json
+            result/${{ matrix.platform }}-*-${{ env.CLK_FREQ_MHZ }}MHz/*.sdc
+          if-no-files-found: ignore
+          retention-days: 14

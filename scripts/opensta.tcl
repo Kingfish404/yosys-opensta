@@ -1,5 +1,5 @@
 #===========================================================
-# OpenSTA Timing Analysis — Summary + fmax Report
+# OpenSTA Timing Analysis -- Summary + fmax Report
 #
 # Outputs: timing report, power report, fmax summary,
 #          SDC, SDF, timing model, OpenSTA verilog

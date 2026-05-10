@@ -17,11 +17,11 @@
 # See: https://openroad.readthedocs.io/en/latest/main/src/ppl/README.html
 #===========================================================
 
-# --- Clock & Control signals → bottom edge ---
+# --- Clock & Control signals -> bottom edge ---
 set_io_pin_constraint -pin_names {clock reset} -region bottom:*
 
-# --- Input operands → left edge ---
+# --- Input operands -> left edge ---
 set_io_pin_constraint -pin_names {a[*] b[*] op_sel[*] acc_en} -region left:*
 
-# --- Outputs → right edge ---
+# --- Outputs -> right edge ---
 set_io_pin_constraint -pin_names {out[*] acc[*] zero overflow} -region left:*

@@ -8,6 +8,7 @@ a consolidated PPA (Power, Performance, Area) report.
 Supports multiple platforms:
   - nangate45:  NanGate FreePDK45 (45nm)
   - asap7:      ASAP7 7nm FinFET PDK
+  - sky130hd:   SkyWater SKY130 High-Density (130nm)
 
 Usage:
   python3 ppa_summary.py result/nangate45-op-50MHz
@@ -22,7 +23,7 @@ import json
 import argparse
 from collections import defaultdict
 
-# ── Platform Configurations ─────────────────────────────────────────────────
+# -- Platform Configurations -------------------------------------------------
 PLATFORMS = {
     "nangate45": {
         "name": "NanGate FreePDK45",
@@ -43,10 +44,22 @@ PLATFORMS = {
             "Design Kit,' Microelectronics J., vol. 53, pp. 105-115, 2016."
         ),
     },
+    "sky130hd": {
+        "name": "SkyWater SKY130 High-Density",
+        "node": "130nm",
+        "supply_voltage_v": 1.8,
+        # sky130_fd_sc_hd__nand2_1: 3.0 um x 1.668 um = 5.004 um^2
+        "nand2_area_um2": 5.004,
+        "time_unit": "ns",
+        "citation": (
+            "SkyWater Open Source PDK (sky130_fd_sc_hd), "
+            "https://github.com/google/skywater-pdk."
+        ),
+    },
 }
 
 
-# ── Parsers ─────────────────────────────────────────────────────────────────
+# -- Parsers -----------------------------------------------------------------
 
 def parse_input_json(filepath):
     """Parse Yosys stat JSON for structured area/cell data."""
@@ -212,7 +225,7 @@ def format_power(watts):
         return f"{watts:.3e} W"
 
 
-# ── Report Generator ───────────────────────────────────────────────────────
+# -- Report Generator -------------------------------------------------------
 
 def generate_report(result_dir, platform_name, design_name):
     """Generate consolidated PPA report from result directory."""
@@ -256,17 +269,17 @@ def generate_report(result_dir, platform_name, design_name):
     # Build report
     r = []
     r.append("=" * 72)
-    r.append(f"  PPA Summary — {design_name}")
+    r.append(f"  PPA Summary -- {design_name}")
     r.append("=" * 72)
 
-    # ── Platform
+    # -- Platform
     r.append(f"\n--- PLATFORM ---")
     r.append(f"  Name:           {plat['name']} ({platform_name})")
     r.append(f"  Tech node:      {plat['node']}")
     r.append(f"  Supply voltage: {plat['supply_voltage_v']} V")
     r.append(f"  Citation:       {plat['citation']}")
 
-    # ── Area
+    # -- Area
     r.append(f"\n--- AREA ---")
     r.append(f"  Chip area:       {area:,.2f} um2 (at {plat['node']})")
     r.append(f"  Gate equivalent: {ge:,.0f} GE (NAND2 = {nand2_area} um2)")
@@ -276,7 +289,7 @@ def generate_report(result_dir, platform_name, design_name):
     r.append(f"  Wires:           {synth['num_wires']} ({synth['num_wire_bits']} bits)")
     r.append(f"  Ports:           {synth['num_ports']} ({synth['num_port_bits']} bits)")
 
-    # ── Cell category breakdown
+    # -- Cell category breakdown
     r.append(f"\n  Cell Breakdown by Category:")
     r.append(f"    {'Category':<22} {'Count':>8} {'%':>7}")
     r.append(f"    {'-'*22} {'-'*8} {'-'*7}")
@@ -285,7 +298,7 @@ def generate_report(result_dir, platform_name, design_name):
         pct = cat_data["count"] / total_cells * 100 if total_cells else 0
         r.append(f"    {cat_name:<22} {cat_data['count']:>8} {pct:>6.1f}%")
 
-    # ── Top cells (by count)
+    # -- Top cells (by count)
     top_cells = sorted(synth["cells_by_type"].items(), key=lambda x: -x[1])[:15]
     r.append(f"\n  Top Cells (by count):")
     r.append(f"    {'Cell Type':<30} {'Count':>8} {'%':>7}")
@@ -294,7 +307,7 @@ def generate_report(result_dir, platform_name, design_name):
         pct = count / total_cells * 100 if total_cells else 0
         r.append(f"    {cell_type:<30} {count:>8} {pct:>6.1f}%")
 
-    # ── Timing
+    # -- Timing
     r.append(f"\n--- TIMING ---")
     if timing["clock_name"]:
         r.append(f"  Clock:           {timing['clock_name']}"
@@ -318,7 +331,7 @@ def generate_report(result_dir, platform_name, design_name):
             r.append(f"  Min period:      {timing['period_min_ns']:.2f} {plat['time_unit']}")
         r.append(f"  *** Max Freq:    {fmax_mhz:.2f} MHz ({fmax_ghz:.3f} GHz) ***")
 
-    # ── Power
+    # -- Power
     if timing["power"]:
         r.append(f"\n--- POWER ---")
         r.append(f"    {'Group':<16} {'Internal':>12} {'Switching':>12} {'Leakage':>12} {'Total':>12} {'%':>7}")
@@ -338,7 +351,7 @@ def generate_report(result_dir, platform_name, design_name):
                      f" {format_power(total_power['leakage_w']):>12}"
                      f" {format_power(total_power['total_w']):>12} {'100.0%':>7}")
 
-    # ── Summary box
+    # -- Summary box
     r.append(f"\n--- SUMMARY ---")
     r.append(f"  Design:     {design_name}")
     r.append(f"  Platform:   {plat['name']} ({plat['node']})")
@@ -409,7 +422,7 @@ def generate_json(result_dir, platform_name, design_name):
     }
 
 
-# ── CLI ─────────────────────────────────────────────────────────────────────
+# -- CLI ---------------------------------------------------------------------
 
 def detect_platform(result_dir):
     """Auto-detect platform from result directory name."""

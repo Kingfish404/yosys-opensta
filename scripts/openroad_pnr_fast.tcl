@@ -1,5 +1,5 @@
 #===========================================================
-# OpenROAD Physical Design Flow — FAST Mode
+# OpenROAD Physical Design Flow -- FAST Mode
 #
 # Optimized for large designs with relaxed timing.
 # Key differences vs standard mode:
@@ -24,4 +24,11 @@ set _RPT_MIN_GROUP_COUNT      3
 set _RPT_MIN_ENDPOINT_COUNT   1
 
 # --- Run the common PnR flow ---
-source [file dirname [info script]]/openroad_pnr_common.tcl
+# OpenROAD (v2.0-17598+) returns just the basename from `info script`,
+# so `[file dirname ...]` resolves to `.` and the relative source fails.
+# Try the script-relative path first, then fall back to ./scripts/.
+set _common "[file dirname [info script]]/openroad_pnr_common.tcl"
+if {![file exists $_common]} {
+  set _common "./scripts/openroad_pnr_common.tcl"
+}
+source $_common

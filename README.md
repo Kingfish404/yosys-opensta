@@ -13,7 +13,7 @@ apt install -y yosys klayout  # or: brew install yosys klayout
 # 2. Build all tools + download NanGate45 PDK
 make setup
 
-# 3. Run the full flow (synthesis → STA → PnR)
+# 3. Run the full flow (synthesis -> STA -> PnR)
 make flow
 
 # 4. View results
@@ -58,6 +58,45 @@ make flow PLATFORM=asap7        # Run full flow with ASAP7
 > **Directory layout**: Platform build configs live in `platforms/<platform>/` (tracked in git).
 > Downloaded PDK data lives in `third_party/lib/<platform>/` (gitignored).
 
+### SKY130HD Platform / TinyTapeout Preflight
+
+SKY130 support targets the `sky130_fd_sc_hd` standard-cell library from the SKY130A PDK packaging used by OpenROAD-flow-scripts. This is the digital library expected by TinyTapeout projects; `sky130hd` is the flow platform/library name, while SKY130A is the full PDK distribution.
+
+```shell
+make setup-sky130hd
+make flow-gds PLATFORM=sky130hd
+make signoff PLATFORM=sky130hd
+```
+
+For TinyTapeout-style local preflight, the Makefile generates a TinyTapeout project under `result/sky130hd-<TT_TOP>-<FREQ>MHz-tt/` from `DESIGN`, `RTL_FILES`, and either a wrapper file or TT-native RTL:
+
+```shell
+# Default: auto-wrapper is generated for DESIGN; scaffold written to result/sky130hd-<TT_TOP>-<FREQ>MHz-tt/
+make tt-scaffold
+make tt-preflight
+
+# Custom non-native design: provide a TT wrapper Verilog file
+make tt-preflight DESIGN=my_core \
+    RTL_FILES="rtl/my_core.v rtl/submodule.v" \
+    TT_TOP=tt_um_my_core \
+    TT_WRAPPER_FILE=path/to/tt_um_my_core.v
+
+# TT-native design: RTL top already has ui_in/uo_out/uio_in/uio_out/uio_oe/ena/clk/rst_n
+make tt-preflight DESIGN=tt_um_my_core \
+    RTL_FILES="rtl/tt_um_my_core.v" \
+    TT_NATIVE=1
+
+# Existing generated netlist: scaffold and link-check a large design such as rapt
+make tt-check DESIGN=rapt CLK_FREQ_MHZ=50
+```
+
+`DESIGN` and `RTL_FILES` are enough to generate the scaffold, which lands in `result/sky130hd-<TT_TOP>-<FREQ>MHz-tt/`. By default `TT_AUTO_WRAP=1` so an evaluation wrapper is generated automatically. When `result/sky130hd-<DESIGN>-<FREQ>MHz/<DESIGN>.netlist.src.v` exists it is used as `TT_RTL_FILES` automatically. Provide `TT_WRAPPER_FILE` (explicit path) for a protocol-correct wrapper, or use `TT_NATIVE=1` when the RTL top already exposes the TinyTapeout interface.
+
+This runs the local SKY130HD RTL-to-GDS flow and the OpenROAD signoff precheck for `TT_TOP`. It is a block-flow preflight, not a replacement for the official TinyTapeout hardening/signoff. Before submitting to a shuttle, run the TinyTapeout support tooling/LibreLane flow and use its generated reports as the final authority.
+
+See [docs/tinytapeout-evaluation.md](docs/tinytapeout-evaluation.md) for TinyTapeout-specific examples, including `rapt`.
+See [docs/tapeout-engineering-flow.md](docs/tapeout-engineering-flow.md) for the end-to-end engineering flow from RTL preparation to local tapeout-style deliverables.
+
 ## Usage
 
 ### Synthesis & Timing Analysis
@@ -86,7 +125,7 @@ make syn SYNTH_HIERARCHICAL=1
 make syn ABC_SCRIPT="+strash;dch;map;topo;dnsize;buffer;upsize;"
 
 # Architecture diagrams
-make viz-arch-dot                # generate dot → svg
+make viz-arch-dot                # generate dot -> svg
 make viz-arch-dot DOT_FORMAT=png
 ```
 
@@ -102,7 +141,7 @@ make viz-arch-dot DOT_FORMAT=png
 ### Place & Route
 
 ```shell
-# Full flow: syn → sta → pnr
+# Full flow: syn -> sta -> pnr
 make flow
 
 # Or run PnR step separately (after syn + sta)
@@ -127,16 +166,21 @@ make pnr PNR_RESUME_FROM=cts
 
 **PnR Parameters:**
 
-| Parameter             | Default (nangate45) | Default (asap7) | Description                                         |
-| --------------------- | ------------------- | --------------- | --------------------------------------------------- |
-| `CORE_UTILIZATION`    | 40                  | 40              | Core area utilization (%)                           |
-| `CORE_ASPECT_RATIO`   | 1.0                 | 1.0             | Floorplan aspect ratio                              |
-| `PLACE_DENSITY`       | 0.60                | 0.60            | Global placement density                            |
-| `MIN_ROUTING_LAYER`   | metal2              | M2              | Bottom routing layer                                |
-| `MAX_ROUTING_LAYER`   | metal10             | M7              | Top routing layer                                   |
-| `DR_THREADS`          | 0 (auto)            | 0 (auto)        | Detailed routing threads                            |
-| `PIN_CONSTRAINT_FILE` | (empty)             | (empty)         | Pin constraint TCL file (optional)                  |
-| `PNR_RESUME_FROM`     | (empty)             | (empty)         | Resume from stage: floorplan/place/cts/route/finish |
+| Parameter                   | Default (nangate45) | Default (asap7) | Default (sky130hd) | Description                                         |
+| --------------------------- | ------------------- | --------------- | ------------------ | --------------------------------------------------- |
+| `CORE_UTILIZATION`          | 40                  | 40              | 40                 | Core area utilization (%)                           |
+| `CORE_ASPECT_RATIO`         | 1.0                 | 1.0             | 1.0                | Floorplan aspect ratio                              |
+| `PLACE_DENSITY`             | 0.60                | 0.60            | 0.60               | Global placement density                            |
+| `MIN_ROUTING_LAYER`         | metal2              | M2              | met1               | Bottom routing layer                                |
+| `MAX_ROUTING_LAYER`         | metal10             | M7              | met5               | Top routing layer                                   |
+| `DR_THREADS`                | 0 (auto)            | 0 (auto)        | 0 (auto)           | Detailed routing threads                            |
+| `PIN_CONSTRAINT_FILE`       | (empty)             | (empty)         | (empty)            | Pin constraint TCL file (optional)                  |
+| `PNR_RESUME_FROM`           | (empty)             | (empty)         | (empty)            | Resume from stage: floorplan/place/cts/route/finish |
+| `REPAIR_ANTENNAS`           | 1                   | 1               | 1                  | Run antenna repair around routing                   |
+| `ANTENNA_REPAIR_ITERS`      | 5                   | 5               | 5                  | Global-route antenna repair iterations              |
+| `ANTENNA_REPAIR_DRT_ITERS`  | 5                   | 5               | 5                  | Post-detailed-route antenna repair iterations       |
+| `ANTENNA_RATIO_MARGIN`      | 10                  | 10              | 10                 | Antenna ratio repair margin (%)                     |
+| `ANTENNA_REPAIR_EXTRA_ARGS` | (empty)             | (empty)         | `-diode_only`      | Extra OpenROAD `repair_antennas` arguments          |
 
 **PnR Output Files** (in `result/<PLATFORM>-<DESIGN>-<FREQ>MHz-pnr/`):
 
@@ -157,6 +201,17 @@ make pnr PNR_RESUME_FROM=cts
 | `2_place.odb`          | Stage checkpoint (for resume)       |
 | `3_cts.odb`            | Stage checkpoint (for resume)       |
 | `4_route.odb`          | Stage checkpoint (for resume)       |
+
+### Signoff Precheck
+
+`make signoff-openroad` runs a local report gate over the generated synthesis and OpenROAD artifacts. It checks for missing files, Yosys `check` warnings/problems, non-empty route DRC, antenna violations, OpenROAD errors, missing SPEF where required, RCX fallback, timing violations, and forbidden standard cells.
+
+```shell
+make signoff-openroad PLATFORM=sky130hd
+make signoff PLATFORM=sky130hd
+```
+
+The JSON report is written to `result/<PLATFORM>-<DESIGN>-<FREQ>MHz-pnr/signoff_openroad.json`. For `sky130hd`, the gate requires extracted SPEF and forbids `sky130_fd_sc_hd__lpflow_*`/`probe` cells by default.
 
 ### Visualization
 
@@ -183,7 +238,7 @@ make gui-klayout        # KLayout GUI
 | `<DESIGN>_chip_routing.png`   | Routing layers only                     |
 | `<DESIGN>_chip_power.png`     | Power distribution network              |
 | `<DESIGN>_chip_clock.png`     | Clock tree network                      |
-| `<DESIGN>_<stage>_full.png`   | Per-stage snapshots (floorplan → final) |
+| `<DESIGN>_<stage>_full.png`   | Per-stage snapshots (floorplan -> final) |
 
 ### Clean
 
@@ -201,8 +256,9 @@ make test               # Run all tests (syn + STA + PnR + viz)
 make test-syn           # Synthesis tests only
 make test-sta           # STA tests only
 make test-pnr           # PnR tests only
+make test-signoff       # OpenROAD signoff precheck smoke test
 make test-viz           # Visualization tests only
-make test-flow          # Full flow end-to-end (syn → sta → pnr)
+make test-flow          # Full flow end-to-end (syn -> sta -> pnr)
 make test PLATFORM=asap7  # Test with ASAP7 platform
 ```
 
@@ -212,31 +268,38 @@ See the [tests](tests) directory for details.
 
 ```
 scripts/
-├── yosys.tcl               # Yosys synthesis (supports ABC_SCRIPT, SYNTH_HIERARCHICAL)
-├── opensta_common.tcl      # Shared STA setup (env, platform, liberty, SDC)
-├── opensta.tcl             # STA summary + fmax report (sources common)
-├── opensta_detail.tcl      # Detailed timing with source attribution (sources common)
-├── openroad_pnr_common.tcl # Shared PnR flow (stage checkpoints, resume support)
-├── openroad_pnr.tcl        # Standard PnR mode (sources common)
-├── openroad_pnr_fast.tcl   # Fast PnR mode (sources common)
-├── ppa_summary.py          # PPA report generator
-└── ...                     # Visualization and utility scripts
+|-- yosys.tcl               # Yosys synthesis (supports ABC_SCRIPT, SYNTH_HIERARCHICAL)
+|-- opensta_common.tcl      # Shared STA setup (env, platform, liberty, SDC)
+|-- opensta.tcl             # STA summary + fmax report (sources common)
+|-- opensta_detail.tcl      # Detailed timing with source attribution (sources common)
+|-- openroad_pnr_common.tcl # Shared PnR flow (stage checkpoints, resume support)
+|-- openroad_pnr.tcl        # Standard PnR mode (sources common)
+|-- openroad_pnr_fast.tcl   # Fast PnR mode (sources common)
+|-- ppa_summary.py          # PPA report generator
+`-- ...                     # Visualization and utility scripts
 platforms/
-├── nangate45/              # NanGate FreePDK45 (45nm)
-│   ├── config.tcl          # OpenROAD/OpenSTA platform config
-│   ├── yosys_config.tcl    # Yosys synthesis config
-│   ├── platform.mk         # Makefile variables
-│   └── setRC.tcl           # RC extraction values
-└── asap7/                  # ASAP7 7nm FinFET
-    ├── config.tcl
-    ├── yosys_config.tcl
-    ├── platform.mk
-    └── setRC.tcl
+|-- nangate45/              # NanGate FreePDK45 (45nm)
+|   |-- config.tcl          # OpenROAD/OpenSTA platform config
+|   |-- yosys_config.tcl    # Yosys synthesis config
+|   |-- platform.mk         # Makefile variables
+|   `-- setRC.tcl           # RC extraction values
+|-- asap7/                  # ASAP7 7nm FinFET
+|   |-- config.tcl
+|   |-- yosys_config.tcl
+|   |-- platform.mk
+|   `-- setRC.tcl
+`-- sky130hd/               # SKY130 sky130_fd_sc_hd digital flow
+    |-- config.tcl
+    |-- yosys_config.tcl
+    |-- platform.mk
+    `-- setRC.tcl
+tinytapeout/
+`-- tt/                     # Optional TinyTapeout support tools clone
 tests/
-├── Makefile                # Test runner
-├── README.md               # Test documentation
-└── designs/
-    └── counter.v           # Minimal test design (8-bit counter)
+|-- Makefile                # Test runner
+|-- README.md               # Test documentation
+`-- designs/
+    `-- counter.v           # Minimal test design (8-bit counter)
 ```
 
 The PnR scripts use a **common + wrapper** pattern: `openroad_pnr.tcl` and `openroad_pnr_fast.tcl` are thin wrappers that set mode-specific defaults and `source` the shared `openroad_pnr_common.tcl`. Similarly, `opensta.tcl` and `opensta_detail.tcl` share setup logic via `opensta_common.tcl`.

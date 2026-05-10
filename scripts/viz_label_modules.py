@@ -3,8 +3,8 @@
 Generate a labeled layout PNG showing module regions on a chip.
 
 Reconstructs module hierarchy from flattened netlist:
-1. Maps cells → modules using net naming from synth JSON (gen-arch.py logic)
-2. Maps JSON cells → DEF instances via verilog ordering
+1. Maps cells -> modules using net naming from synth JSON (gen-arch.py logic)
+2. Maps JSON cells -> DEF instances via verilog ordering
 3. Parses DEF COMPONENTS for instance positions
 4. Computes per-module bounding boxes
 5. Overlays labeled rectangles on the base PNG
@@ -34,7 +34,7 @@ import matplotlib.image as mpimg
 import numpy as np
 
 
-# ─── Module colors ───────────────────────────────────────────────────
+# --- Module colors ---------------------------------------------------
 
 MODULE_COLORS = [
     "#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231",
@@ -45,7 +45,7 @@ MODULE_COLORS = [
 
 
 def _find_top_module(modules):
-    """Find the top module — prefer the one with most cells/ports among top=1 candidates."""
+    """Find the top module -- prefer the one with most cells/ports among top=1 candidates."""
     candidates = []
     for name, mod in modules.items():
         attrs = mod.get("attributes", {})
@@ -106,7 +106,7 @@ def _compute_hier_cell_proportions(hier_json_path, module_prefixes):
     netnames = top_mod.get("netnames", {})
     cells = top_mod.get("cells", {})
 
-    # bit → prefix
+    # bit -> prefix
     bit_to_prefix = defaultdict(set)
     for name, info in netnames.items():
         if name.startswith("$") or "." not in name:
@@ -118,7 +118,7 @@ def _compute_hier_cell_proportions(hier_json_path, module_prefixes):
             if isinstance(bit, int):
                 bit_to_prefix[bit].add(prefix)
 
-    # cell → bits, bit → cells
+    # cell -> bits, bit -> cells
     cell_bits = {}
     bit_to_cells = defaultdict(set)
     for cell_name, cell_info in cells.items():
@@ -169,11 +169,11 @@ def map_cells_to_modules(syn_json_path, module_prefixes, hier_proportions=None,
     """Map each cell in the synth JSON to a module prefix via net connections.
 
     Strategy:
-    1. Build bit→prefix mapping from BOTH hier JSON (pre-synth, richer hierarchy)
+    1. Build bit->prefix mapping from BOTH hier JSON (pre-synth, richer hierarchy)
        and syn JSON (post-synth).  Yosys preserves bit numbering through synthesis,
        so hier bit IDs are valid in syn cells.
-    2. Direct assignment via bit→prefix mapping (pass 1)
-    3. Optional controlled propagation (pass 2+) — disabled by default because
+    2. Direct assignment via bit->prefix mapping (pass 1)
+    3. Optional controlled propagation (pass 2+) -- disabled by default because
        post-synthesis buffer chains cause module assignments to spread across
        the entire chip.  Use spatial_assign_cells() instead for remaining cells.
 
@@ -182,7 +182,7 @@ def map_cells_to_modules(syn_json_path, module_prefixes, hier_proportions=None,
         module_prefixes: dict {prefix: net_count} from hier JSON
         hier_proportions: optional dict {prefix: fraction} from hier JSON cell
             distribution, used to cap propagation.
-        hier_json_path: optional path to pre-synth hierarchy JSON; its bit→prefix
+        hier_json_path: optional path to pre-synth hierarchy JSON; its bit->prefix
             mapping greatly improves direct assignment coverage.
         max_propagation_iters: max connectivity propagation rounds (default 0 =
             direct assignment only; use spatial_assign_cells for the rest).
@@ -199,12 +199,12 @@ def map_cells_to_modules(syn_json_path, module_prefixes, hier_proportions=None,
     netnames = top_mod.get("netnames", {})
     cells = top_mod.get("cells", {})
 
-    # Build bit → module prefix mapping from BOTH hier and syn JSON.
+    # Build bit -> module prefix mapping from BOTH hier and syn JSON.
     # The hier JSON has many more hierarchically-named nets (pre-synthesis),
-    # and its bit IDs are preserved through synthesis (hier bits ⊂ syn bits).
+    # and its bit IDs are preserved through synthesis (hier bits subset of syn bits).
     bit_to_prefix = defaultdict(set)
 
-    # (a) From hier JSON (primary source — much richer hierarchy info)
+    # (a) From hier JSON (primary source -- much richer hierarchy info)
     if hier_json_path:
         with open(hier_json_path) as f:
             hier_data = json.load(f)
@@ -230,7 +230,7 @@ def map_cells_to_modules(syn_json_path, module_prefixes, hier_proportions=None,
             if isinstance(bit, int):
                 bit_to_prefix[bit].add(prefix)
 
-    # Build cell→bits, bit→cells index, and cell pin count
+    # Build cell->bits, bit->cells index, and cell pin count
     cell_bits = {}
     cell_pin_count = {}
     bit_to_cells_raw = defaultdict(set)
@@ -254,11 +254,11 @@ def map_cells_to_modules(syn_json_path, module_prefixes, hier_proportions=None,
     if n_dropped:
         print(f"    (dropped {n_dropped} high-fanout bits from propagation index)", flush=True)
 
-    # Identify 2-pin cells (buffers/inverters) — these form long chains and
+    # Identify 2-pin cells (buffers/inverters) -- these form long chains and
     # must not participate in propagation to prevent flooding.
     is_buffer = {cn for cn, pc in cell_pin_count.items() if pc <= 2}
 
-    # Pass 1: direct assignment — cells with direct hierarchical net connections
+    # Pass 1: direct assignment -- cells with direct hierarchical net connections
     cell_module = {}
     for cell_name, bits in cell_bits.items():
         prefix_votes = defaultdict(int)
@@ -473,7 +473,7 @@ def parse_def_positions(def_path, target_instances):
                        float(m.group(3)), float(m.group(4)))
                 continue
 
-            # ROW definitions — extract placement core boundaries
+            # ROW definitions -- extract placement core boundaries
             rm = re.match(
                 r"ROW\s+\S+\s+\S+\s+(\d+)\s+(\d+)\s+\S+\s+DO\s+(\d+)\s+BY\s+\d+\s+STEP\s+(\d+)",
                 line,
@@ -602,7 +602,7 @@ def render_labeled_image(base_png, bboxes, dbu, die, out_path, min_count=50,
         for mi in range(n_mods):
             smoothed[:, :, mi] = gaussian_filter(grid[:, :, mi], sigma=sigma)
 
-        # Total raw density (unsmoothed) — used to mask empty regions
+        # Total raw density (unsmoothed) -- used to mask empty regions
         total_raw = grid.sum(axis=2)
         # Smoothed total for mask threshold
         total_smooth = gaussian_filter(total_raw, sigma=sigma)

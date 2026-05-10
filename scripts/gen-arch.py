@@ -42,7 +42,7 @@ def extract_hierarchy_from_nets(top_mod):
 
     Chisel/FIRRTL flattened designs use naming: module.signal, mod_a_mod_b.signal
     Returns: (modules, bridges, hierarchy_tree)
-      hierarchy_tree: nested dict {name: {"count": N, "children": {…}}}
+      hierarchy_tree: nested dict {name: {"count": N, "children": {...}}}
     """
     netnames = top_mod.get("netnames", {})
     user_nets = {n: v for n, v in netnames.items() if not n.startswith("$")}
@@ -79,7 +79,7 @@ def extract_hierarchy_from_nets(top_mod):
         if not found_bridge:
             modules[prefix] = len(signals)
 
-    # Pass 2: fuzzy match – resolve abbreviations like l1d->l1d_cache, csr->csrs
+    # Pass 2: fuzzy match - resolve abbreviations like l1d->l1d_cache, csr->csrs
     def _fuzzy_resolve(part, exclude):
         """Resolve a bridge part to a known module via prefix matching."""
         if part in modules and part != exclude:
@@ -121,7 +121,7 @@ def extract_hierarchy_from_nets(top_mod):
     if remaining_compound:
         cells = top_mod.get("cells", {})
         netnames = top_mod.get("netnames", {})
-        # bit → set of prefixes (only for known module prefixes)
+        # bit -> set of prefixes (only for known module prefixes)
         bit_prefix = defaultdict(set)
         for name, info in netnames.items():
             if name.startswith("$") or "." not in name:
@@ -168,7 +168,7 @@ def extract_hierarchy_from_nets(top_mod):
                 del modules[prefix]
 
     # Build recursive hierarchy tree from dot-separated net names
-    # tree[mod] = {"count": N, "children": {child: {"count": M, "children": {…}}}}
+    # tree[mod] = {"count": N, "children": {child: {"count": M, "children": {...}}}}
     tree = {}
     for name in user_nets:
         parts = name.split(".")
@@ -223,9 +223,9 @@ def _render_tree_node(lines, node_name, node, prefix_path, depth, current_level,
     area_label = ""
     if area_val > 0:
         if area_val >= 1000:
-            area_label = f" | {area_val/1000:.1f}K µm²"
+            area_label = f" | {area_val/1000:.1f}K um^2"
         else:
-            area_label = f" | {area_val:.0f} µm²"
+            area_label = f" | {area_val:.0f} um^2"
 
     if has_children:
         cid = f"cluster_{next(cluster_counter)}"
@@ -274,7 +274,7 @@ def _render_tree_node(lines, node_name, node, prefix_path, depth, current_level,
                     fc_node = fc_node["children"][fc_first]
                 col_first_nodes.append(first_path)
 
-            # Invisible edges between columns to enforce left→right ordering
+            # Invisible edges between columns to enforce left->right ordering
             for ci in range(len(col_first_nodes) - 1):
                 lines.append(
                     f'{indent}  "{col_first_nodes[ci]}" -> "{col_first_nodes[ci+1]}"'
@@ -330,7 +330,7 @@ def _common_prefix(names):
 
 
 def _trace_port_modules(top_mod, modules):
-    """Trace port→module connections via shared cell net bits.
+    """Trace port->module connections via shared cell net bits.
 
     Returns: dict  {port_name: {mod_prefix: count}} excluding global signals.
     """
@@ -338,7 +338,7 @@ def _trace_port_modules(top_mod, modules):
     cells = top_mod.get("cells", {})
     netnames = top_mod.get("netnames", {})
 
-    # bit → user net prefixes
+    # bit -> user net prefixes
     bit_to_prefix = defaultdict(set)
     for name, info in netnames.items():
         if name.startswith("$") or "." not in name:
@@ -350,7 +350,7 @@ def _trace_port_modules(top_mod, modules):
             if isinstance(bit, int):
                 bit_to_prefix[bit].add(prefix)
 
-    # bit → port name
+    # bit -> port name
     bit_to_port = {}
     for pname, pinfo in ports.items():
         for bit in pinfo.get("bits", []):
@@ -432,10 +432,10 @@ def _compute_module_areas(syn_mod, modules, cell_areas, prefix_depth=1):
             Only nets whose first dot-segment is in this set are considered.
         cell_areas: {cell_type: area} from liberty parsing.
         prefix_depth: How many leading dot-segments to use as the bucket key
-            (1 = top-level module only, 2 = include one submodule level, …).
+            (1 = top-level module only, 2 = include one submodule level, ...).
             For nets shallower than ``prefix_depth + 1`` segments, the entire
             net path minus its leaf signal is used (i.e. they fall back to a
-            shallower bucket — typically the top-level module itself).
+            shallower bucket -- typically the top-level module itself).
 
     Returns:
         {mod_name: area_um2} for each module, plus "__unassigned__" for unmapped cells.
@@ -446,7 +446,7 @@ def _compute_module_areas(syn_mod, modules, cell_areas, prefix_depth=1):
     if prefix_depth < 1:
         prefix_depth = 1
 
-    # Build bit → module prefix mapping from hierarchical net names
+    # Build bit -> module prefix mapping from hierarchical net names
     bit_to_prefix = defaultdict(set)
     for name, info in netnames.items():
         if name.startswith("$") or "." not in name:
@@ -461,9 +461,9 @@ def _compute_module_areas(syn_mod, modules, cell_areas, prefix_depth=1):
             if isinstance(bit, int):
                 bit_to_prefix[bit].add(prefix)
 
-    # Build cell→bits and bit→cells index for propagation
-    cell_bits = {}  # cell_name → set of bit ints
-    bit_to_cells = defaultdict(set)  # bit → set of cell_names
+    # Build cell->bits and bit->cells index for propagation
+    cell_bits = {}  # cell_name -> set of bit ints
+    bit_to_cells = defaultdict(set)  # bit -> set of cell_names
     for cell_name, cell_info in cells.items():
         bits = set()
         for conn_bits in cell_info.get("connections", {}).values():
@@ -474,7 +474,7 @@ def _compute_module_areas(syn_mod, modules, cell_areas, prefix_depth=1):
         cell_bits[cell_name] = bits
 
     # Pass 1: assign cells directly connected to hierarchical nets
-    cell_module = {}  # cell_name → mod_name
+    cell_module = {}  # cell_name -> mod_name
     for cell_name, bits in cell_bits.items():
         prefix_votes = defaultdict(int)
         for bit in bits:
@@ -564,7 +564,7 @@ def _compute_flow_ranks(modules, bridges):
             for nxt, w in adj[cur]:
                 if nxt in visited:
                     continue
-                # Check if cur→nxt is a forward edge
+                # Check if cur->nxt is a forward edge
                 is_fwd = any(s == cur and d == nxt for s, d, _ in edges)
                 if is_fwd:
                     rank[nxt] = rank[cur] + 1
@@ -607,7 +607,7 @@ def generate_dot_from_nets(top_name, top_mod, depth, area_map=None):
     n_bcast = sum(1 for b in bridges if ">" in b)
 
     total_area = sum(area_map.values()) if area_map else 0
-    area_info = f", total area={total_area/1000:.1f}K µm²" if total_area > 0 else ""
+    area_info = f", total area={total_area/1000:.1f}K um^2" if total_area > 0 else ""
     graph_label = (
         f"{top_name} | depth={depth}, modules={len(modules)},"
         f" bridges={n_bridges}, broadcast={n_bcast}, pipeline stages={max_rank+1}"
@@ -627,7 +627,7 @@ def generate_dot_from_nets(top_name, top_mod, depth, area_map=None):
     lines.append("  nodesep=0.5; ranksep=1.2;")
     lines.append("")
 
-    # Trace actual port→module connections via cells
+    # Trace actual port->module connections via cells
     port_mods = _trace_port_modules(top_mod, modules)
     port_groups = _group_ports_by_module(port_mods, top_ports)
 
@@ -691,9 +691,9 @@ def generate_dot_from_nets(top_name, top_mod, depth, area_map=None):
             area_label = ""
             if area_val > 0:
                 if area_val >= 1000:
-                    area_label = f" | {area_val/1000:.1f}K µm²"
+                    area_label = f" | {area_val/1000:.1f}K um^2"
                 else:
-                    area_label = f" | {area_val:.0f} µm²"
+                    area_label = f" | {area_val:.0f} um^2"
             size_attrs = ""
             if area_map and max_area > 0 and area_val > 0:
                 ratio = area_val / max_area
@@ -1013,8 +1013,8 @@ def generate_area_treemap_svg(top_name, area_map, canvas_w=1200, canvas_h=800):
 
     total_area = sum(a for _, a in items)
 
-    # Compute physical dimensions (µm) with 3:2 aspect ratio
-    # W × H = total_area, W/H = 3/2
+    # Compute physical dimensions (um) with 3:2 aspect ratio
+    # W x H = total_area, W/H = 3/2
     phys_h_um = math.sqrt(total_area * 2 / 3)
     phys_w_um = math.sqrt(total_area * 3 / 2)
     phys_w_mm = phys_w_um / 1000
@@ -1045,8 +1045,8 @@ def generate_area_treemap_svg(top_name, area_map, canvas_w=1200, canvas_h=800):
         f'<rect x="0" y="0" width="{svg_w}" height="{svg_h}" fill="white"/>',
         # Title
         f'<text x="{svg_w/2}" y="28" text-anchor="middle" font-size="18"'
-        f' font-weight="bold">{top_name} — Module Area Treemap'
-        f' (total: {total_area/1000:.1f}K µm²)</text>',
+        f' font-weight="bold">{top_name} -- Module Area Treemap'
+        f' (total: {total_area/1000:.1f}K um^2)</text>',
     ]
 
     # Draw treemap border
@@ -1065,7 +1065,7 @@ def generate_area_treemap_svg(top_name, area_map, canvas_w=1200, canvas_h=800):
     lines.append(
         f'<text x="{margin_left + draw_w/2}" y="{arr_y + 18}"'
         f' text-anchor="middle" font-size="14" font-weight="bold">'
-        f'{phys_w_mm:.3f} mm ({phys_w_um:.0f} µm)</text>'
+        f'{phys_w_mm:.3f} mm ({phys_w_um:.0f} um)</text>'
     )
 
     # Height dimension annotation (right)
@@ -1078,7 +1078,7 @@ def generate_area_treemap_svg(top_name, area_map, canvas_w=1200, canvas_h=800):
         f'<text x="{arr_x + 8}" y="{margin_top + draw_h/2}"'
         f' text-anchor="middle" font-size="14" font-weight="bold"'
         f' transform="rotate(90, {arr_x + 8}, {margin_top + draw_h/2})">'
-        f'{phys_h_mm:.3f} mm ({phys_h_um:.0f} µm)</text>'
+        f'{phys_h_mm:.3f} mm ({phys_h_um:.0f} um)</text>'
     )
 
     # Arrow marker defs
@@ -1122,10 +1122,10 @@ def generate_area_treemap_svg(top_name, area_map, canvas_w=1200, canvas_h=800):
             lines.append(
                 f'<text x="{cx:.1f}" y="{cy + fs_name * 0.7:.1f}"'
                 f' text-anchor="middle" font-size="{fs_detail:.1f}"'
-                f' fill="#444">{area_str} µm² ({pct:.1f}%)</text>'
+                f' fill="#444">{area_str} um^2 ({pct:.1f}%)</text>'
             )
         elif rw > 20 and rh > 15:
-            # Smaller rect — name only
+            # Smaller rect -- name only
             lines.append(
                 f'<text x="{cx:.1f}" y="{cy + fs_name * 0.35:.1f}"'
                 f' text-anchor="middle" font-size="{max(fs_name, 8):.1f}"'
@@ -1216,12 +1216,12 @@ def main():
 
             total = sum(area_map.values())
             assigned = sum(v for k, v in area_map.items() if k != "__unassigned__")
-            print(f"  Total area mapped: {total:.0f} µm²")
-            print(f"  Assigned to modules: {assigned:.0f} µm² ({assigned/total*100:.1f}%)" if total > 0 else "")
+            print(f"  Total area mapped: {total:.0f} um^2")
+            print(f"  Assigned to modules: {assigned:.0f} um^2 ({assigned/total*100:.1f}%)" if total > 0 else "")
             for mod, a in sorted(area_map.items(), key=lambda x: -x[1]):
                 if mod == "__unassigned__":
                     continue
-                print(f"    {mod}: {a:.0f} µm²")
+                print(f"    {mod}: {a:.0f} um^2")
         else:
             print("Warning: liberty or syn-json file not found, skipping area computation")
 

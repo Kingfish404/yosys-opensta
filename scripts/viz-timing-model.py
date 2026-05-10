@@ -344,7 +344,7 @@ def plot_pin_map(cell, groups, out_dir):
     ax.set_xlim(0, 1)
     ax.set_ylim(box_bot - 0.06, box_top + 0.04)
     ax.axis("off")
-    ax.set_title(f"Pin Map — {cell['name']}", fontsize=14, pad=10)
+    ax.set_title(f"Pin Map -- {cell['name']}", fontsize=14, pad=10)
     fig.tight_layout()
     path = os.path.join(out_dir, "timing_pin_map.svg")
     fig.savefig(path, bbox_inches="tight")
@@ -396,7 +396,7 @@ def plot_setup_hold(pins, out_dir, cell_name):
     ax.set_xticks(x)
     ax.set_xticklabels(names, rotation=45, ha="right", fontsize=9)
     ax.set_ylabel("Constraint (ns)")
-    ax.set_title(f"Setup / Hold Constraints — {cell_name}", fontsize=13)
+    ax.set_title(f"Setup / Hold Constraints -- {cell_name}", fontsize=13)
     ax.legend()
     ax.axhline(0, color="black", linewidth=0.5)
     fig.tight_layout()
@@ -435,7 +435,7 @@ def plot_nldm_curves(pins, out_dir, cell_name, max_pins=20):
     if not rise_curves and not fall_curves:
         return
 
-    # Deduplicate by (index_tuple, values_tuple) — many pins share identical curves
+    # Deduplicate by (index_tuple, values_tuple) -- many pins share identical curves
     def dedup(curves):
         seen = {}
         for tag, rp, idx, val in curves:
@@ -471,7 +471,7 @@ def plot_nldm_curves(pins, out_dir, cell_name, max_pins=20):
         if len(curves) <= 10:
             ax.legend(fontsize=7, loc="upper left")
 
-    fig.suptitle(f"NLDM Delay Curves — {cell_name}", fontsize=14)
+    fig.suptitle(f"NLDM Delay Curves -- {cell_name}", fontsize=14)
     fig.tight_layout()
     path = os.path.join(out_dir, "timing_nldm_delay.svg")
     fig.savefig(path, bbox_inches="tight")
@@ -530,7 +530,7 @@ def plot_delay_distribution(pins, out_dir, cell_name):
     ax2.set_xlabel("Rise Delay at min load (ns)")
     ax2.set_title(f"Top {top_n} Slowest Output Pins")
 
-    fig.suptitle(f"Propagation Delay Overview — {cell_name}", fontsize=14)
+    fig.suptitle(f"Propagation Delay Overview -- {cell_name}", fontsize=14)
     fig.tight_layout()
     path = os.path.join(out_dir, "timing_delay_dist.svg")
     fig.savefig(path, bbox_inches="tight")
@@ -599,7 +599,7 @@ def plot_transition_curves(pins, out_dir, cell_name, max_pins=20):
         if len(curves) <= 10:
             ax.legend(fontsize=7, loc="upper left")
 
-    fig.suptitle(f"Transition Time Curves — {cell_name}", fontsize=14)
+    fig.suptitle(f"Transition Time Curves -- {cell_name}", fontsize=14)
     fig.tight_layout()
     path = os.path.join(out_dir, "timing_transition.svg")
     fig.savefig(path, bbox_inches="tight")
@@ -659,7 +659,7 @@ def plot_timing_arc_summary(pins, out_dir, cell_name):
                  ha="center", va="center", fontsize=12, color="#666")
         ax2.set_title("Combinational Paths", fontsize=11)
 
-    fig.suptitle(f"Timing Arc Summary — {cell_name}", fontsize=14)
+    fig.suptitle(f"Timing Arc Summary -- {cell_name}", fontsize=14)
     fig.tight_layout()
     path = os.path.join(out_dir, "timing_arc_summary.svg")
     fig.savefig(path, bbox_inches="tight")
@@ -696,7 +696,7 @@ def plot_capacitance(pins, out_dir, cell_name):
     ax.set_yticklabels(names, fontsize=8)
     ax.invert_yaxis()
     ax.set_xlabel("Capacitance (fF)")
-    ax.set_title(f"Pin Capacitance (top {top_n}) — {cell_name}", fontsize=13)
+    ax.set_title(f"Pin Capacitance (top {top_n}) -- {cell_name}", fontsize=13)
 
     handles = [
         mpatches.Patch(color="#4e79a7", label="Input"),

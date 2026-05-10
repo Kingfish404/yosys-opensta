@@ -10,8 +10,8 @@ SHELL := /bin/bash
 # =====================================================================
 #  Platform
 # =====================================================================
-# Supported: nangate45 (default), asap7
-PLATFORM ?= nangate45## Target platform: nangate45, asap7
+# Supported: nangate45 (default), asap7, sky130hd
+PLATFORM ?= nangate45## Target platform: nangate45, asap7, sky130hd
 PLATFORM_DIR = $(PROJ_PATH)/platforms/$(PLATFORM)
 THIRD_PARTY_DIR = $(PROJ_PATH)/third_party
 LIB_DIR = $(THIRD_PARTY_DIR)/lib/$(PLATFORM)
@@ -38,11 +38,18 @@ PLACE_DENSITY ?= 0.60## Placement density (0.0-1.0)
 DR_THREADS ?= 0## Detailed routing threads (0=auto)
 PIN_CONSTRAINT_FILE ?=## Pin constraint TCL file (optional)
 PNR_RESUME_FROM ?=## Resume PnR from stage (floorplan|place|cts|route|finish)
+REPAIR_ANTENNAS ?= 1## Repair antenna violations during global routing (0/1)
+ANTENNA_REPAIR_ITERS ?= 5## Antenna repair iterations
+ANTENNA_REPAIR_DRT_ITERS ?= 5## Post-detailed-route antenna repair iterations
+ANTENNA_RATIO_MARGIN ?= 10## Antenna repair ratio margin (%)
+ANTENNA_REPAIR_EXTRA_ARGS ?=## Extra repair_antennas args (e.g. -diode_only)
+SIGNOFF_REQUIRE_SPEF ?= 0## signoff-openroad requires extracted SPEF (0/1)
+SIGNOFF_FORBID_CELL_REGEX ?=## Regex of forbidden cells in final netlist
 
 # =====================================================================
 #  Visualization Parameters
 # =====================================================================
-VIZ_AREA_DEPTH ?= 2## viz-area hierarchy depth (1=top modules, 2=one submodule level, …)
+VIZ_AREA_DEPTH ?= 2## viz-area hierarchy depth (1=top modules, 2=one submodule level, ...)
 
 # =====================================================================
 #  Derived Paths (do not edit)
@@ -52,6 +59,23 @@ PNR_RESULT_DIR = $(PROJ_PATH)/result/$(PLATFORM)-$(DESIGN)-$(CLK_FREQ_MHZ)MHz-pn
 SCRIPT_DIR = $(PROJ_PATH)/scripts
 NETLIST_SYN_V = $(DESIGN).netlist.syn.v
 DOT_FORMAT ?= svg## Architecture diagram format: svg, pdf, png
+TT_DIR ?= $(PROJ_PATH)/tinytapeout## TinyTapeout project scaffold directory
+TT_NATIVE ?= 0## Use DESIGN as TinyTapeout top when it already has the TT interface
+TT_AUTO_WRAP ?= 1## Generate an evaluation wrapper when no TT_WRAPPER_FILE exists
+TT_DESIGN ?= $(DESIGN)## Design name to package for TinyTapeout
+TT_TOP_PREFIX ?= tt_um_yosys_opensta## TinyTapeout top prefix for generated wrappers
+TT_TOP ?= $(if $(filter 1 true yes,$(TT_NATIVE)),$(TT_DESIGN),$(TT_TOP_PREFIX)_$(TT_DESIGN))## TinyTapeout top module name
+TT_PROJECT_DIR ?= $(PROJ_PATH)/result/sky130hd-$(TT_TOP)-$(CLK_FREQ_MHZ)MHz-tt## Generated TinyTapeout project directory (under result/)
+TT_WRAPPER_FILE ?=## Custom TinyTapeout wrapper Verilog (leave empty to use auto-wrapper)
+TT_RESULT_RTL_FILE = $(PROJ_PATH)/result/sky130hd-$(TT_DESIGN)-$(CLK_FREQ_MHZ)MHz/$(TT_DESIGN).netlist.src.v
+TT_RTL_FILES ?= $(if $(wildcard $(TT_RESULT_RTL_FILE)),$(TT_RESULT_RTL_FILE),$(RTL_FILES))## Design RTL files to package into the TinyTapeout scaffold
+TT_VERILOG_INCLUDE_DIRS ?= $(TT_PROJECT_DIR)/src $(VERILOG_INCLUDE_DIRS)## TinyTapeout generated include search paths
+TT_LIB_FILE ?= $(PROJ_PATH)/third_party/lib/sky130hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib## SKY130HD Liberty used for TinyTapeout hierarchy checks
+TT_TITLE ?= yosys-opensta $(TT_DESIGN) preflight## TinyTapeout project title
+TT_AUTHOR ?= Kingfish404## TinyTapeout project author
+TT_DESCRIPTION ?= TinyTapeout wrapper for $(TT_DESIGN)## TinyTapeout project description
+TT_TILES ?= 1x1## TinyTapeout tile allocation
+TT_CLOCK_HZ ?= $(shell awk 'BEGIN { printf "%d", ($(CLK_FREQ_MHZ))*1000000 }')## TinyTapeout metadata clock frequency
 
 NANGATE45_URL = https://github.com/Kingfish404/yosys-opensta/releases/download/nangate45/nangate45.tar.bz2
 
@@ -78,10 +102,15 @@ PNR_ENV = \
   MIN_ROUTING_LAYER=$(MIN_ROUTING_LAYER) \
   MAX_ROUTING_LAYER=$(MAX_ROUTING_LAYER) \
   PIN_CONSTRAINT_FILE=$(PIN_CONSTRAINT_FILE) \
-  PNR_RESUME_FROM=$(PNR_RESUME_FROM)
+	PNR_RESUME_FROM=$(PNR_RESUME_FROM) \
+	REPAIR_ANTENNAS=$(REPAIR_ANTENNAS) \
+	ANTENNA_REPAIR_ITERS=$(ANTENNA_REPAIR_ITERS) \
+	ANTENNA_REPAIR_DRT_ITERS=$(ANTENNA_REPAIR_DRT_ITERS) \
+	ANTENNA_RATIO_MARGIN=$(ANTENNA_RATIO_MARGIN) \
+	ANTENNA_REPAIR_EXTRA_ARGS="$(ANTENNA_REPAIR_EXTRA_ARGS)"
 
 # =====================================================================
-#  Default Target — Help
+#  Default Target -- Help
 # =====================================================================
 .DEFAULT_GOAL := help
 
@@ -119,7 +148,7 @@ help: ## Show this help message
 # =====================================================================
 #  Setup
 # =====================================================================
-setup: setup-nangate45 setup-asap7 setup-opensta setup-openroad ## Full local build (CUDD + OpenSTA + yosys-slang + OpenROAD)
+setup: setup-nangate45 setup-asap7 setup-sky130hd setup-opensta setup-openroad ## Full local build (CUDD + OpenSTA + yosys-slang + OpenROAD)
 
 setup-nangate45: ## Download NanGate45 PDK data
 	mkdir -p third_party/lib
@@ -152,6 +181,31 @@ setup-asap7: ## Download ASAP7 PDK data
 	    third_party/lib/asap7/lib/NLDM/asap7sc7p5t_SEQ_RVT_TT_nldm_220123.lib \
 	    > third_party/lib/asap7/lib/merged.lib
 	@echo ">>> ASAP7 platform files ready in third_party/lib/asap7/"
+
+setup-sky130hd: ## Download SKY130 HD PDK data (TinyTapeout-compatible)
+	@echo ">>> Downloading SKY130 HD platform files from OpenROAD-flow-scripts ..."
+	@rm -rf /tmp/orfs-sky130-download
+	git clone --depth 1 --filter=blob:none --sparse \
+		https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts.git \
+		/tmp/orfs-sky130-download
+	cd /tmp/orfs-sky130-download && git sparse-checkout set \
+		flow/platforms/sky130hd \
+		flow/platforms/sky130hs
+	@mkdir -p third_party/lib/sky130hd
+	cp -r /tmp/orfs-sky130-download/flow/platforms/sky130hd/lef third_party/lib/sky130hd/
+	cp -r /tmp/orfs-sky130-download/flow/platforms/sky130hd/lib third_party/lib/sky130hd/
+	cp -r /tmp/orfs-sky130-download/flow/platforms/sky130hd/gds third_party/lib/sky130hd/ 2>/dev/null || true
+	cp -r /tmp/orfs-sky130-download/flow/platforms/sky130hd/cdl third_party/lib/sky130hd/ 2>/dev/null || true
+	cp /tmp/orfs-sky130-download/flow/platforms/sky130hd/cells_clkgate_hd.v third_party/lib/sky130hd/ 2>/dev/null || true
+	cp /tmp/orfs-sky130-download/flow/platforms/sky130hd/cells_latch_hd.v   third_party/lib/sky130hd/ 2>/dev/null || true
+	cp /tmp/orfs-sky130-download/flow/platforms/sky130hd/cells_adders_hd.v  third_party/lib/sky130hd/ 2>/dev/null || true
+	cp /tmp/orfs-sky130-download/flow/platforms/sky130hd/sky130hd.lyt       third_party/lib/sky130hd/ 2>/dev/null || true
+	cp /tmp/orfs-sky130-download/flow/platforms/sky130hd/sky130hd.lyp       third_party/lib/sky130hd/ 2>/dev/null || true
+	cp /tmp/orfs-sky130-download/flow/platforms/sky130hd/fill.json          third_party/lib/sky130hd/ 2>/dev/null || true
+	cp -L /tmp/orfs-sky130-download/flow/platforms/sky130hd/rcx_patterns.rules third_party/lib/sky130hd/ 2>/dev/null || true
+	@rm -rf /tmp/orfs-sky130-download
+	@echo ">>> SKY130 HD platform files ready in third_party/lib/sky130hd/"
+	@echo ">>> Standard cell library: sky130_fd_sc_hd (TinyTapeout-compatible)"
 
 setup-opensta: ## Build OpenSTA locally (with CUDD)
 	# Download and build CUDD
@@ -285,6 +339,16 @@ pnr-from-finish: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Resume PnR from finish (repor
 	$(OPENROAD_BIN) -exit ./scripts/openroad_pnr.tcl \
 	| tee $(PNR_RESULT_DIR)/pnr.log
 
+# All PnR artifacts are side-effects of the `pnr` target. Declaring them as
+# .SECONDARY (with no recipe) lets downstream targets reference these files
+# directly while keeping `make -n flow-gds` / `make -n signoff` happy when the
+# files don't exist yet.
+PNR_ARTIFACTS = \
+	$(PNR_RESULT_DIR)/$(DESIGN)_final.def \
+	$(PNR_RESULT_DIR)/$(DESIGN)_final.odb
+.SECONDARY: $(PNR_ARTIFACTS)
+$(PNR_ARTIFACTS): pnr ;
+
 # =====================================================================
 #  GDS Generation
 # =====================================================================
@@ -304,12 +368,84 @@ gds: $(PNR_RESULT_DIR)/$(DESIGN)_final.def ## Generate GDS via KLayout
 #  Composite Flows
 # =====================================================================
 flow: syn sta pnr ## Complete flow: syn -> sta -> pnr
-	@echo "=== Flow complete: syn → sta → pnr ==="
+	@echo "=== Flow complete: syn -> sta -> pnr ==="
 	@echo "=== Results: $(RESULT_DIR)/  $(PNR_RESULT_DIR)/ ==="
 
 flow-gds: syn sta pnr gds ## RTL-to-GDS: syn -> sta -> pnr -> gds
 	@echo "=== RTL-to-GDS complete ==="
 	@echo "=== GDS: $(PNR_RESULT_DIR)/$(DESIGN)_final.gds ==="
+
+# =====================================================================
+#  Signoff Precheck
+# =====================================================================
+signoff-openroad: $(PNR_RESULT_DIR)/$(DESIGN)_final.def ## OpenROAD report gate (timing/DRC/antenna/SPEF/cells)
+	python3 $(SCRIPT_DIR)/signoff_precheck.py \
+		--result-dir $(RESULT_DIR) \
+		--pnr-dir $(PNR_RESULT_DIR) \
+		--design $(DESIGN) \
+		--platform $(PLATFORM) \
+		--require-spef $(SIGNOFF_REQUIRE_SPEF) \
+		--forbid-cell-regex '$(SIGNOFF_FORBID_CELL_REGEX)'
+
+signoff: signoff-openroad ## Run all available signoff prechecks
+
+# =====================================================================
+#  TinyTapeout Integration
+# =====================================================================
+tt-scaffold: ## Generate TinyTapeout project files from DESIGN/RTL_FILES
+	python3 $(SCRIPT_DIR)/tt_scaffold.py \
+		--project-dir "$(TT_PROJECT_DIR)" \
+		--design "$(TT_DESIGN)" \
+		--top "$(TT_TOP)" \
+		--rtl-files "$(TT_RTL_FILES)" \
+		--clock-hz "$(TT_CLOCK_HZ)" \
+		--title "$(TT_TITLE)" \
+		--author "$(TT_AUTHOR)" \
+		--description "$(TT_DESCRIPTION)" \
+		--tiles "$(TT_TILES)" \
+		$(if $(filter 1 true yes,$(TT_NATIVE)),--native,$(if $(wildcard $(TT_WRAPPER_FILE)),--wrapper-file "$(TT_WRAPPER_FILE)",$(if $(filter 1 true yes,$(TT_AUTO_WRAP)),--auto-wrapper,)))
+
+tt-check: tt-scaffold ## Run TinyTapeout generated project hierarchy/link check
+	@test -f "$(TT_LIB_FILE)" || { echo "Missing SKY130HD Liberty: $(TT_LIB_FILE). Run 'make setup-sky130hd' first."; exit 1; }
+	@tt_generated_rtl_files="$$(find "$(TT_PROJECT_DIR)/src" -maxdepth 1 -name '*.v' | sort | tr '\n' ' ')"; \
+	yosys -q -m slang -p "read_liberty -lib -ignore_miss_func $(TT_LIB_FILE); read_slang --top $(TT_TOP) $$tt_generated_rtl_files; hierarchy -check -top $(TT_TOP)"
+
+tt-syn: tt-scaffold ## Run SKY130HD synthesis on the generated TinyTapeout project
+	@tt_generated_rtl_files="$$(find "$(TT_PROJECT_DIR)/src" -maxdepth 1 -name '*.v' | sort | tr '\n' ' ')"; \
+	$(MAKE) syn \
+		PLATFORM=sky130hd \
+		DESIGN=$(TT_TOP) \
+		RTL_FILES="$$tt_generated_rtl_files" \
+		VERILOG_INCLUDE_DIRS="$(TT_VERILOG_INCLUDE_DIRS)" \
+		CLK_PORT_NAME=clk \
+		CLK_FREQ_MHZ=$(CLK_FREQ_MHZ)
+
+tt-preflight: tt-scaffold ## Run local SKY130HD preflight on the generated TinyTapeout project
+	@tt_generated_rtl_files="$$(find "$(TT_PROJECT_DIR)/src" -maxdepth 1 -name '*.v' | sort | tr '\n' ' ')"; \
+	$(MAKE) flow-gds \
+		PLATFORM=sky130hd \
+		DESIGN=$(TT_TOP) \
+		RTL_FILES="$$tt_generated_rtl_files" \
+		VERILOG_INCLUDE_DIRS="$(TT_VERILOG_INCLUDE_DIRS)" \
+		CLK_PORT_NAME=clk \
+		CLK_FREQ_MHZ=$(CLK_FREQ_MHZ) && \
+	$(MAKE) signoff-openroad \
+		PLATFORM=sky130hd \
+		DESIGN=$(TT_TOP) \
+		RTL_FILES="$$tt_generated_rtl_files" \
+		VERILOG_INCLUDE_DIRS="$(TT_VERILOG_INCLUDE_DIRS)" \
+		CLK_PORT_NAME=clk \
+		CLK_FREQ_MHZ=$(CLK_FREQ_MHZ)
+
+tt-tools: ## Clone TinyTapeout support tools into tinytapeout/tt
+	@test ! -e $(TT_DIR)/tt || { echo "$(TT_DIR)/tt already exists"; exit 0; }
+	git clone https://github.com/TinyTapeout/tt-support-tools $(TT_DIR)/tt
+
+tt-harden: tt-scaffold ## Run official TinyTapeout local hardening (requires tt-tools env)
+	@test -x $(TT_DIR)/tt/tt_tool.py || { echo "Run 'make tt-tools' and install TinyTapeout dependencies first."; exit 1; }
+	cd $(TT_PROJECT_DIR) && $(TT_DIR)/tt/tt_tool.py --create-user-config
+	cd $(TT_PROJECT_DIR) && $(TT_DIR)/tt/tt_tool.py --harden
+	cd $(TT_PROJECT_DIR) && $(TT_DIR)/tt/tt_tool.py --print-warnings
 
 # =====================================================================
 #  Visualization
@@ -437,12 +573,13 @@ clean-pnr: ## Remove PnR results only
 #  .PHONY
 # =====================================================================
 .PHONY: help \
-        setup setup-nangate45 setup-asap7 setup-opensta setup-openroad \
+        setup setup-nangate45 setup-asap7 setup-sky130hd setup-opensta setup-openroad \
         syn sta sta-detail show show-raw summary summary-json \
         pnr pnr-fast \
         pnr-from-place pnr-from-cts pnr-from-route pnr-from-finish \
         gds \
-        flow flow-gds \
+		flow flow-gds signoff signoff-openroad \
+		tt-scaffold tt-syn tt-preflight tt-tools tt-harden \
         viz viz-openroad viz-klayout viz-timing viz-arch-dot viz-area viz-png viz-label \
         gui gui-klayout \
         test test-syn test-sta test-pnr test-viz test-flow \

@@ -1,0 +1,330 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Run on the 1st of every month at 03:17 UTC. Two purposes:
+  #   1. Keeps the most recent successful run (with its job summary +
+  #      artifacts) within GitHub's 90-day retention window so links
+  #      from READMEs / issues stay live.
+  #   2. Detects breakage from upstream churn (yosys / yosys-slang /
+  #      OpenSTA / OpenROAD HEAD / brew formulae / OpenROAD-flow-scripts
+  #      PDK exports) even when this repo itself is idle.
+  schedule:
+    - cron: "17 3 1 * *"
+
+# Cancel in-progress runs of the same workflow on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Lint -- quick syntax / help checks (~30s, no PDK needed)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (python / shell / make)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python syntax check (py_compile)
+        run: |
+          set -euxo pipefail
+          mapfile -t pyfiles < <(git ls-files '*.py')
+          if [ "${#pyfiles[@]}" -gt 0 ]; then
+            python3 -m py_compile "${pyfiles[@]}"
+          fi
+
+      - name: Shell syntax check (bash -n)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          shfiles=()
+          while IFS= read -r f; do shfiles+=("$f"); done < <(git ls-files '*.sh')
+          for f in "${shfiles[@]}"; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: Makefile dry-run / help
+        run: |
+          make help
+          make -n flow         >/dev/null
+          make -n flow-gds     >/dev/null
+          make -n signoff      >/dev/null
+          make -n tt-scaffold  >/dev/null
+          make -C tests -n test >/dev/null
+
+  # ---------------------------------------------------------------------------
+  # 2. Simulation -- iverilog testbenches (lightweight, no PDK)
+  # ---------------------------------------------------------------------------
+  sim:
+    name: RTL simulation (iverilog)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Install iverilog (brew)
+        run: brew install icarus-verilog
+
+      - name: Run simulation tests
+        run: make -C tests test-sim
+
+      - name: Simulation summary -> job summary
+        if: always()
+        run: |
+          {
+            echo "## RTL simulation (iverilog)"
+            echo
+            echo "| Testbench | Result |"
+            echo "|---|---|"
+            for log in tests/sim/*.log; do
+              [ -f "$log" ] || continue
+              name="$(basename "$log" .log)"
+              if grep -q "ALL TESTS PASSED" "$log"; then
+                echo "| \`$name\` | [OK] PASS |"
+              else
+                echo "| \`$name\` | [FAIL] FAIL |"
+              fi
+            done
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload simulation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sim-logs
+          path: |
+            tests/sim/*.log
+            tests/sim/*.vcd
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 3. Synthesis + STA + Visualization (+ optional PnR/Signoff/Flow).
+  #
+  #    A single job covers the whole RTL-to-layout flow per platform so we
+  #    don't pay for setup-opensta / yosys / brew twice. Runs in parallel
+  #    across nangate45 / asap7 / sky130hd via a matrix.
+  #
+  #    The PnR-only steps (OpenROAD source build + test-pnr/test-signoff/
+  #    test-viz-layout/test-flow) are gated behind `RUN_PNR=1`, which is
+  #    only set for matrix.platform == nangate45 on push to main,
+  #    workflow_dispatch, or PRs labeled `ci:pnr`. asap7 and sky130hd
+  #    cover front-end (synthesis + STA + viz + PPA) only to keep CI
+  #    runtime bounded.
+  # ---------------------------------------------------------------------------
+  syn-sta-pnr:
+    name: Syn + STA + Viz (+ PnR if eligible) -- ${{ matrix.platform }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [nangate45, asap7, sky130hd]
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      # PnR-stage steps run only on nangate45 (keeps CI time bounded) when:
+      # push to main, manual dispatch, or a PR labeled `ci:pnr`. For asap7
+      # and sky130hd we cover front-end (synthesis + STA + viz + PPA only).
+      RUN_PNR: ${{ (matrix.platform == 'nangate45' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:pnr')))) && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install apt dependencies
+        run: |
+          set -euxo pipefail
+          extras=""
+          if [ "$RUN_PNR" = "1" ]; then extras="klayout"; fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake bison flex libfl-dev \
+            tcl-dev tcl tk tk-dev swig libreadline-dev \
+            libeigen3-dev zlib1g-dev libffi-dev pkg-config \
+            git wget curl ca-certificates \
+            graphviz python3 python3-pip python3-venv \
+            $extras
+
+      - name: Set up Homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Install yosys (brew, newer than apt -- required by yosys-slang HEAD)
+        run: brew install yosys
+
+      - name: Install Python deps for visualization / signoff scripts (brew)
+        # Brew's Python is PEP 668 / externally-managed, so install numpy /
+        # matplotlib via Homebrew formulae instead of `pip install`.
+        run: brew install numpy python-matplotlib
+
+      # Build OpenROAD from source so we get the same OpenSTA that we use
+      # locally (the Precision-Innovations prebuilt .deb ships an OpenSTA
+      # whose `report_checks` flag set is out of sync with upstream HEAD,
+      # which used to fail the post-PnR timing reporters with STA-0563).
+      - name: Build OpenROAD from source
+        if: env.RUN_PNR == '1'
+        run: make setup-openroad
+
+      - name: Build CUDD + OpenSTA + yosys-slang
+        run: make setup-opensta
+
+      - name: Download PDK (${{ matrix.platform }})
+        run: make setup-${{ matrix.platform }}
+
+      - name: Verify tool versions
+        run: |
+          yosys -V
+          ./third_party/OpenSTA/build/sta -version || true
+          if [ "$RUN_PNR" = "1" ]; then ./third_party/OpenROAD/build/bin/openroad -version; klayout -v || true; fi
+          python3 --version
+
+      # ----- Front-end coverage (always) ---------------------------------
+      - name: Run synthesis tests
+        run: make -C tests test-syn PLATFORM=$PLATFORM
+
+      - name: Run STA tests
+        run: make -C tests test-sta PLATFORM=$PLATFORM
+
+      - name: Run show / summary commands (PPA report)
+        run: |
+          make -C tests test-show PLATFORM=$PLATFORM
+          make summary      DESIGN=op CLK_FREQ_MHZ=50 PLATFORM=$PLATFORM
+          make summary-json DESIGN=op CLK_FREQ_MHZ=50 PLATFORM=$PLATFORM
+          make show-raw     DESIGN=op CLK_FREQ_MHZ=50 PLATFORM=$PLATFORM
+          make sta-detail   DESIGN=op CLK_FREQ_MHZ=50 PLATFORM=$PLATFORM
+
+      - name: Run visualization (arch + timing + area)
+        run: |
+          make -C tests test-viz-arch   PLATFORM=$PLATFORM
+          make -C tests test-viz-timing PLATFORM=$PLATFORM
+          make viz-area DESIGN=op CLK_FREQ_MHZ=50 PLATFORM=$PLATFORM || true
+
+      - name: Front-end PPA -> job summary
+        if: always()
+        run: |
+          set +e
+          shopt -s nullglob
+          dirs=( result/${PLATFORM}-counter-50MHz result/${PLATFORM}-op-50MHz )
+          existing=()
+          for d in "${dirs[@]}"; do [ -d "$d" ] && existing+=("$d"); done
+          if [ "${#existing[@]}" -gt 0 ]; then
+            python3 scripts/ppa_to_markdown.py "${existing[@]}" \
+              --title "Synthesis + STA PPA (${PLATFORM})" \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ----- Back-end coverage (gated on RUN_PNR) ------------------------
+      - name: PnR (counter)
+        if: env.RUN_PNR == '1'
+        run: make -C tests test-pnr PLATFORM=$PLATFORM
+
+      - name: Signoff precheck
+        if: env.RUN_PNR == '1'
+        run: make -C tests test-signoff PLATFORM=$PLATFORM
+
+      - name: Layout visualization
+        if: env.RUN_PNR == '1'
+        run: make -C tests test-viz-layout PLATFORM=$PLATFORM || true
+
+      - name: Full flow (syn -> sta -> pnr)
+        if: env.RUN_PNR == '1'
+        run: make -C tests test-flow PLATFORM=$PLATFORM
+
+      - name: PnR signoff -> job summary
+        if: always() && env.RUN_PNR == '1'
+        run: |
+          set +e
+          {
+            echo "## PnR signoff (${PLATFORM} / counter)"
+            echo
+            sj="result/${PLATFORM}-counter-50MHz-pnr/signoff_openroad.json"
+            if [ -f "$sj" ]; then
+              python3 - "$sj" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          j = json.load(open(sys.argv[1]))
+          status = "[OK] PASS" if j.get("pass") else "[FAIL] FAIL"
+          print(f"**Overall:** {status}")
+          print()
+          print("| Check | Result | Details |")
+          print("|---|---|---|")
+          for name, c in (j.get("checks") or {}).items():
+              ok = "[OK]" if c.get("pass") else "[FAIL]"
+              det = ", ".join(f"{k}={v}" for k, v in c.items()
+                              if k not in ("pass", "message"))
+              print(f"| `{name}` | {ok} | {det} |")
+          fails = j.get("failures") or []
+          if fails:
+              print()
+              print("**Failures:**")
+              for f in fails:
+                  print(f"- {f}")
+          PY
+            else
+              echo "_signoff_openroad.json not produced -- PnR likely failed_"
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Append the post-PnR area / power highlights, if available.
+          area_rpt="result/${PLATFORM}-counter-50MHz-pnr/area_final.rpt"
+          power_rpt="result/${PLATFORM}-counter-50MHz-pnr/power_final.rpt"
+          tmax="result/${PLATFORM}-counter-50MHz-pnr/timing_max_final.rpt"
+          {
+            echo "### Post-route highlights"
+            echo
+            echo '```'
+            for f in "$area_rpt" "$power_rpt" "$tmax"; do
+              [ -f "$f" ] || continue
+              echo "----- $(basename "$f") -----"
+              head -40 "$f"
+              echo
+            done
+            echo '```'
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload synthesis / STA artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: syn-sta-results-${{ matrix.platform }}
+          path: |
+            result/${{ matrix.platform }}-*-50MHz/*.txt
+            result/${{ matrix.platform }}-*-50MHz/*.log
+            result/${{ matrix.platform }}-*-50MHz/*.json
+            result/${{ matrix.platform }}-*-50MHz/*.sdc
+            result/${{ matrix.platform }}-*-50MHz/*.svg
+            result/${{ matrix.platform }}-*-50MHz/*.netlist.syn.v
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload PnR artifacts
+        if: always() && env.RUN_PNR == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnr-results-${{ matrix.platform }}
+          path: |
+            result/${{ matrix.platform }}-counter-50MHz-pnr/*.def
+            result/${{ matrix.platform }}-counter-50MHz-pnr/*.rpt
+            result/${{ matrix.platform }}-counter-50MHz-pnr/*.json
+            result/${{ matrix.platform }}-counter-50MHz-pnr/*.log
+            result/${{ matrix.platform }}-counter-50MHz-pnr/images/**
+          if-no-files-found: ignore
+          retention-days: 7

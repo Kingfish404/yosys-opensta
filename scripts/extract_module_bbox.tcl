@@ -84,14 +84,14 @@ dict for {pfx _} $primary_modules {
     puts "  $pfx"
 }
 
-# --- Build net → module prefix mapping ---
+# --- Build net -> module prefix mapping ---
 # For each net in the block, check if name starts with a known prefix + "."
 puts "\nScanning nets..."
 set nets [$block getNets]
 set total_nets [llength $nets]
 puts "Total nets: $total_nets"
 
-# net_ptr → prefix mapping
+# net_ptr -> prefix mapping
 set net_to_module [dict create]
 set mapped_nets 0
 foreach net $nets {
@@ -116,7 +116,7 @@ set insts [$block getInsts]
 set total_insts [llength $insts]
 puts "Total instances: $total_insts"
 
-# module_name → {min_x min_y max_x max_y count}
+# module_name -> {min_x min_y max_x max_y count}
 set module_bbox [dict create]
 set assigned 0
 set unassigned 0

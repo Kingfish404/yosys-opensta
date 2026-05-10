@@ -7,7 +7,7 @@
 set TECH_LEF     $LIB_DIR/lef/asap7_tech_1x_201209.lef
 set SC_LEF       $LIB_DIR/lef/asap7sc7p5t_28_R_1x_220121a.lef
 
-# Time unit: liberty uses ps → MHz_to_period factor = 1e6
+# Time unit: liberty uses ps -> MHz_to_period factor = 1e6
 set TIME_SCALE 1000000.0
 set TIME_UNIT "ps"
 set LIB_FILES [list \

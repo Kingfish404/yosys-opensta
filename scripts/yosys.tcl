@@ -53,6 +53,12 @@ if {[info exists DONT_USE_CELLS]} {
 #===========================================================
 yosys -import
 
+# Load Liberty cell stubs so Yosys knows standard-cell port directions when
+# running check on a technology-mapped netlist.
+foreach lib $LIB_FILES {
+  read_liberty -lib -ignore_miss_func $lib
+}
+
 # Don't change these unless you know what you are doing
 set stat_ext    "_stat.rep"
 set gl_ext      "_gl.v"
@@ -104,7 +110,7 @@ if {[info exist BLACKBOX_MAP_TCL] && $BLACKBOX_MAP_TCL ne ""} {
 }
 
 # generate architecture diagram data (preserves module hierarchy)
-# write_json BEFORE hierarchy/proc — read_slang already parsed all modules
+# write_json BEFORE hierarchy/proc -- read_slang already parsed all modules
 # hierarchy and proc would flatten sub-modules into primitives
 write_json $RESULT_DIR/${DESIGN}_hier.json
 
@@ -144,6 +150,7 @@ opt -undriven
 # Technology mapping for cells
 abc -D [expr $CLK_PERIOD_NS * 1000] \
     {*}$liberty_args \
+  {*}$dont_use_args \
     -showtmp \
     -script $abc_script
 
