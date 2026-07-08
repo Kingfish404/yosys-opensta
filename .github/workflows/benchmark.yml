@@ -90,7 +90,7 @@ jobs:
 
       - name: Build CUDD + OpenSTA + sv-elab
         if: env.SKIP_PLATFORM == '0'
-        run: make setup-opensta
+        run: make setup-opensta setup-sv-elab
 
       - name: Download PDK (${{ matrix.platform }})
         if: env.SKIP_PLATFORM == '0'
