@@ -79,6 +79,10 @@ TT_CLOCK_HZ ?= $(shell awk 'BEGIN { printf "%d", ($(CLK_FREQ_MHZ))*1000000 }')##
 
 NANGATE45_URL = https://github.com/Kingfish404/yosys-opensta/releases/download/nangate45/nangate45.tar.bz2
 
+# Portable downloader: prefer curl (default on macOS), fall back to wget (common
+# on minimal Linux). Both stream the URL to stdout so callers can pipe to tar.
+CURL ?= $(shell command -v curl >/dev/null 2>&1 && echo 'curl -fsSL' || echo 'wget -qO-')
+
 # Tool paths (override if installed elsewhere)
 OPENSTA_BIN ?= $(PROJ_PATH)/third_party/OpenSTA/build/sta
 OPENROAD_BIN ?= $(shell command -v openroad 2>/dev/null || echo $(PROJ_PATH)/third_party/OpenROAD/build/bin/openroad)
@@ -148,11 +152,19 @@ help: ## Show this help message
 # =====================================================================
 #  Setup
 # =====================================================================
-setup: setup-nangate45 setup-asap7 setup-sky130hd setup-opensta setup-openroad ## Full local build (CUDD + OpenSTA + yosys-slang + OpenROAD)
+setup: setup-nangate45 setup-asap7 setup-sky130hd setup-opensta setup-yosys-slang setup-openroad ## Full local build (CUDD + OpenSTA + yosys-slang + OpenROAD)
+
+setup-deps: ## Install build dependencies (macOS Homebrew only; Linux: install manually)
+ifeq ($(shell uname -s),Darwin)
+	@command -v brew >/dev/null 2>&1 || { echo "Error: Homebrew not found. Install from https://brew.sh"; exit 1; }
+	brew install cmake swig bison flex eigen tcl-tk fmt wget || true
+else
+	@echo ">>> Linux: install cmake swig bison flex libeigen3-dev tcl-dev libfmt-dev via your package manager."
+endif
 
 setup-nangate45: ## Download NanGate45 PDK data
 	mkdir -p third_party/lib
-	wget -O - $(NANGATE45_URL) | tar xfj - -C third_party/lib
+	$(CURL) $(NANGATE45_URL) | tar xfj - -C third_party/lib
 
 setup-asap7: ## Download ASAP7 PDK data
 	@echo ">>> Downloading ASAP7 platform files from OpenROAD-flow-scripts ..."
@@ -207,19 +219,16 @@ setup-sky130hd: ## Download SKY130 HD PDK data (TinyTapeout-compatible)
 	@echo ">>> SKY130 HD platform files ready in third_party/lib/sky130hd/"
 	@echo ">>> Standard cell library: sky130_fd_sc_hd (TinyTapeout-compatible)"
 
-setup-opensta: ## Build OpenSTA locally (with CUDD)
-	# Download and build CUDD
-	mkdir -p third_party
-	wget -O third_party/cudd-3.0.0.tar.gz https://raw.githubusercontent.com/davidkebo/cudd/main/cudd_versions/cudd-3.0.0.tar.gz
-	tar -xvf third_party/cudd-3.0.0.tar.gz -C third_party
-	rm third_party/cudd-3.0.0.tar.gz
-	cd third_party/cudd-3.0.0 && mkdir -p ../cudd && ./configure && $(MAKE_ENV_CLEAN) $(MAKE) -j$(NPROC)
-	# Clone and build OpenSTA
-	git clone https://github.com/parallaxsw/OpenSTA.git third_party/OpenSTA || true
-	cd third_party/OpenSTA && $(MAKE_ENV_CLEAN) cmake -DCUDD_DIR=../cudd-3.0.0 -B build . && $(MAKE_ENV_CLEAN) cmake --build build -j$(NPROC)
-	# Build and install yosys-slang
-	git clone --recursive https://github.com/povik/yosys-slang || true
-	cd yosys-slang && $(MAKE_ENV_CLEAN) cmake -S . -B build -G "Unix Makefiles" -DCMAKE_MAKE_PROGRAM="$(MAKE_BIN)" -DYOSYS_CONFIG=yosys-config -DCMAKE_BUILD_TYPE=Release && $(MAKE_ENV_CLEAN) cmake --build build --parallel $(NPROC) && $(MAKE_ENV_CLEAN) cmake --install build
+setup-opensta: ## Build OpenSTA locally (with CUDD, macOS/Linux native)
+	# Delegates to scripts/build_opensta.sh, which resolves Homebrew keg-only
+	# tool paths (tcl-tk/bison/flex/eigen/fmt) on macOS and falls back to
+	# system locations on Linux. Leaves the binary at $(OPENSTA_BIN).
+	$(MAKE_ENV_CLEAN) bash $(SCRIPT_DIR)/build_opensta.sh
+
+setup-yosys-slang: ## Build and install the yosys-slang SystemVerilog frontend
+	@command -v yosys-config >/dev/null 2>&1 || { echo "Error: yosys-config not found. Install Yosys first (macOS: brew install yosys)."; exit 1; }
+	git clone --recursive https://github.com/povik/yosys-slang third_party/yosys-slang || true
+	cd third_party/yosys-slang && $(MAKE_ENV_CLEAN) cmake -S . -B build -G "Unix Makefiles" -DCMAKE_MAKE_PROGRAM="$(MAKE_BIN)" -DYOSYS_CONFIG=yosys-config -DCMAKE_BUILD_TYPE=Release && $(MAKE_ENV_CLEAN) cmake --build build --parallel $(NPROC) && $(MAKE_ENV_CLEAN) cmake --install build
 	@echo ">>> Setup complete. Run 'make flow' to test the full flow."
 
 setup-openroad: ## Build OpenROAD from source
@@ -260,14 +269,19 @@ syn: $(RESULT_DIR)/$(NETLIST_SYN_V) ## Run Yosys synthesis
 
 $(RESULT_DIR)/$(NETLIST_SYN_V): $(RTL_FILES) $(SCRIPT_DIR)/yosys.tcl
 	mkdir -p $(@D)
+	# Parameters are passed via environment variables rather than as `tcl`
+	# command arguments: Yosys linked against Tcl 9 segfaults when the `tcl`
+	# command is invoked with any script arguments (argv marshalling bug), so
+	# yosys.tcl reads DESIGN/VERILOG_FILES/VERILOG_INCLUDE_DIRS/NETLIST_SYN_V
+	# from the environment when no argv is provided.
 	export PLATFORM=$(PLATFORM) \
 	  ABC_SCRIPT="$(ABC_SCRIPT)" \
-	  SYNTH_HIERARCHICAL=$(SYNTH_HIERARCHICAL) && \
-	echo tcl $(SCRIPT_DIR)/yosys.tcl \
-		$(DESIGN) \
-		\"$(RTL_FILES)\" \
-		\"$(VERILOG_INCLUDE_DIRS)\" \
-		$@ | yosys -m slang -s - 2>&1 | tee $(@D)/yosys.log
+	  SYNTH_HIERARCHICAL=$(SYNTH_HIERARCHICAL) \
+	  DESIGN="$(DESIGN)" \
+	  VERILOG_FILES="$(RTL_FILES)" \
+	  VERILOG_INCLUDE_DIRS="$(VERILOG_INCLUDE_DIRS)" \
+	  NETLIST_SYN_V="$@" && \
+	yosys -m slang -p "tcl $(SCRIPT_DIR)/yosys.tcl" 2>&1 | tee $(@D)/yosys.log
 
 # =====================================================================
 #  Static Timing Analysis
@@ -573,7 +587,7 @@ clean-pnr: ## Remove PnR results only
 #  .PHONY
 # =====================================================================
 .PHONY: help \
-        setup setup-nangate45 setup-asap7 setup-sky130hd setup-opensta setup-openroad \
+        setup setup-deps setup-nangate45 setup-asap7 setup-sky130hd setup-opensta setup-yosys-slang setup-openroad \
         syn sta sta-detail show show-raw summary summary-json \
         pnr pnr-fast \
         pnr-from-place pnr-from-cts pnr-from-route pnr-from-finish \
