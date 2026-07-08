@@ -257,11 +257,13 @@ ifeq ($(shell uname -s),Darwin)
 	cd third_party/OpenROAD && ./etc/Build.sh
 else
 	# Linux: use the official dependency installer + build script
+	# The CLI flow only needs the OpenROAD binary/Tcl interface; disabling
+	# Python bindings avoids Homebrew Python/glibc link mismatches on CI.
 	cd third_party/OpenROAD \
 		&& sudo ./etc/DependencyInstaller.sh -base \
 		&& ./etc/DependencyInstaller.sh -common -local \
 		&& sed -i 's/ABSL_ROOT/absl_ROOT/g' etc/openroad_deps_prefixes.txt \
-		&& ./etc/Build.sh -cmake='-DCUDD_DIR=$(HOME)/.local'
+		&& ./etc/Build.sh -cmake='-DCUDD_DIR=$(HOME)/.local -DBUILD_PYTHON=OFF'
 endif
 
 # =====================================================================
