@@ -183,7 +183,7 @@ jobs:
         run: make setup-openroad
 
       - name: Build CUDD + OpenSTA + sv-elab
-        run: make setup-opensta
+        run: make setup-opensta setup-sv-elab
 
       - name: Download PDK (${{ matrix.platform }})
         run: make setup-${{ matrix.platform }}
