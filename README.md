@@ -32,7 +32,7 @@ Run `make help` to see all available targets.
 make setup
 ```
 
-This builds CUDD, OpenSTA, yosys-slang, OpenROAD, and downloads the NanGate45 PDK.
+This builds CUDD, OpenSTA, sv-elab (formerly yosys-slang), OpenROAD, and downloads the NanGate45 PDK.
 
 > **Note**: Building OpenROAD requires many dependencies (cmake, boost, swig, tcl, etc.).
 > See [OpenROAD build instructions](https://github.com/The-OpenROAD-Project/OpenROAD/blob/master/docs/user/Build.md).
@@ -115,7 +115,7 @@ make sta DESIGN=my_core \
     CLK_PORT_NAME=clk \
     CLK_FREQ_MHZ=100
 
-# SystemVerilog is supported via yosys-slang
+# SystemVerilog is supported via sv-elab (formerly yosys-slang)
 make sta DESIGN=my_core RTL_FILES="/path/to/top.sv"
 
 # Hierarchical synthesis (preserve sub-module boundaries)

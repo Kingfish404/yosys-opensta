@@ -9,7 +9,7 @@ on:
   #   1. Keeps the most recent successful run (with its job summary +
   #      artifacts) within GitHub's 90-day retention window so links
   #      from READMEs / issues stay live.
-  #   2. Detects breakage from upstream churn (yosys / yosys-slang /
+  #   2. Detects breakage from upstream churn (yosys / sv-elab /
   #      OpenSTA / OpenROAD HEAD / brew formulae / OpenROAD-flow-scripts
   #      PDK exports) even when this repo itself is idle.
   schedule:
@@ -166,7 +166,7 @@ jobs:
       - name: Set up Homebrew
         uses: Homebrew/actions/setup-homebrew@master
 
-      - name: Install yosys (brew, newer than apt -- required by yosys-slang HEAD)
+      - name: Install yosys (brew, newer than apt -- required by sv-elab HEAD)
         run: brew install yosys
 
       - name: Install Python deps for visualization / signoff scripts (brew)
@@ -182,8 +182,8 @@ jobs:
         if: env.RUN_PNR == '1'
         run: make setup-openroad
 
-      - name: Build CUDD + OpenSTA + yosys-slang
-        run: make setup-opensta
+      - name: Build CUDD + OpenSTA + sv-elab
+        run: make setup-opensta setup-sv-elab
 
       - name: Download PDK (${{ matrix.platform }})
         run: make setup-${{ matrix.platform }}
