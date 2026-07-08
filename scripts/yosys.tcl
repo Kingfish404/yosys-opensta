@@ -1,10 +1,21 @@
 #===========================================================
 #   set parameter
 #===========================================================
-set DESIGN                  [lindex $argv 0]
-set VERILOG_FILES           [string map {"\"" ""} [lindex $argv 1]]
-set VERILOG_INCLUDE_DIRS    [string map {"\"" ""} [lindex $argv 2]]
-set NETLIST_SYN_V           [lindex $argv 3]
+# Parameters may arrive either as `tcl` command arguments ($argv) or, when the
+# host Yosys is linked against Tcl 9 (whose `tcl`-command argv marshalling
+# crashes on any script argument), via environment variables. Prefer $argv when
+# present, otherwise fall back to the environment.
+if {[info exists argv] && [llength $argv] >= 4} {
+  set DESIGN                  [lindex $argv 0]
+  set VERILOG_FILES           [string map {"\"" ""} [lindex $argv 1]]
+  set VERILOG_INCLUDE_DIRS    [string map {"\"" ""} [lindex $argv 2]]
+  set NETLIST_SYN_V           [lindex $argv 3]
+} else {
+  set DESIGN                  $::env(DESIGN)
+  set VERILOG_FILES           [string map {"\"" ""} $::env(VERILOG_FILES)]
+  set VERILOG_INCLUDE_DIRS    [string map {"\"" ""} $::env(VERILOG_INCLUDE_DIRS)]
+  set NETLIST_SYN_V           $::env(NETLIST_SYN_V)
+}
 set RESULT_DIR              [file dirname $NETLIST_SYN_V]
 puts "DESIGN: $DESIGN"
 puts "VERILOG_FILES: $VERILOG_FILES"

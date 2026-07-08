@@ -84,13 +84,13 @@ jobs:
         if: env.SKIP_PLATFORM == '0'
         uses: Homebrew/actions/setup-homebrew@master
 
-      - name: Install yosys (brew, newer than apt -- required by yosys-slang HEAD)
+      - name: Install yosys (brew, newer than apt -- required by sv-elab HEAD)
         if: env.SKIP_PLATFORM == '0'
         run: brew install yosys
 
-      - name: Build CUDD + OpenSTA + yosys-slang
+      - name: Build CUDD + OpenSTA + sv-elab
         if: env.SKIP_PLATFORM == '0'
-        run: make setup-opensta
+        run: make setup-opensta setup-sv-elab
 
       - name: Download PDK (${{ matrix.platform }})
         if: env.SKIP_PLATFORM == '0'
