@@ -34,12 +34,17 @@ if [[ -n "$BREW" ]]; then
     FLEX_PREFIX="$($BREW --prefix flex 2>/dev/null || true)"
     EIGEN_PREFIX="$($BREW --prefix eigen 2>/dev/null || true)"
     FMT_PREFIX="$($BREW --prefix fmt 2>/dev/null || true)"
-    # tcl-tk on brew is Tcl 9; OpenSTA's FindTCL only auto-detects 8.x, so hint it.
-    TCL_LIB="$(ls "$TCL_PREFIX"/lib/libtcl9*.dylib 2>/dev/null | head -1 || true)"
-    [[ -z "$TCL_LIB" ]] && TCL_LIB="$(ls "$TCL_PREFIX"/lib/libtcl8*.dylib 2>/dev/null | head -1 || true)"
-    TCL_HDR="$(ls "$TCL_PREFIX"/include/tcl-tk/tcl.h "$TCL_PREFIX"/include/tcl.h 2>/dev/null | head -1 || true)"
-    [[ -n "$TCL_LIB" ]] && CMAKE_EXTRA+=("-DTCL_LIBRARY=$TCL_LIB")
-    [[ -n "$TCL_HDR" ]] && CMAKE_EXTRA+=("-DTCL_HEADER=$TCL_HDR")
+    # OpenSTA's SWIG-generated Tcl wrappers still rely on Tcl 8.x compatibility
+    # macros (for example CONST). Do not point CMake at Homebrew Tcl 9 headers;
+    # let FindTCL fall back to the system Tcl 8.x install instead.
+    TCL_LIB="$(ls "$TCL_PREFIX"/lib/libtcl8*.dylib "$TCL_PREFIX"/lib/libtcl8*.so "$TCL_PREFIX"/lib/libtcl8*.so.* 2>/dev/null | head -1 || true)"
+    if [[ -n "$TCL_LIB" ]]; then
+        TCL_HDR="$(ls "$TCL_PREFIX"/include/tcl-tk/tcl.h "$TCL_PREFIX"/include/tcl.h 2>/dev/null | head -1 || true)"
+        CMAKE_EXTRA+=("-DTCL_LIBRARY=$TCL_LIB")
+        [[ -n "$TCL_HDR" ]] && CMAKE_EXTRA+=("-DTCL_HEADER=$TCL_HDR")
+    else
+        echo "[build_opensta] Homebrew Tcl 8.x not found -> using system Tcl"
+    fi
     [[ -x "$BISON_PREFIX/bin/bison" ]] && CMAKE_EXTRA+=("-DBISON_EXECUTABLE=$BISON_PREFIX/bin/bison")
     [[ -d "$FLEX_PREFIX" ]] && CMAKE_EXTRA+=("-DFLEX_EXECUTABLE=$FLEX_PREFIX/bin/flex" "-DFLEX_INCLUDE_DIR=$FLEX_PREFIX/include")
     PREFIX_PATH="$EIGEN_PREFIX;$FMT_PREFIX"
